@@ -41,6 +41,26 @@ function formatEntry(entry) {
   );
 }
 
+/** Split lines into Discord-safe message chunks (≤1900 chars). */
+function chunkLines(lines, maxLen = 1900) {
+  const chunks = [];
+  let buf = [];
+  let size = 0;
+  for (const line of lines) {
+    const add = line.length + (buf.length ? 1 : 0);
+    if (buf.length && size + add > maxLen) {
+      chunks.push(buf.join('\n'));
+      buf = [line];
+      size = line.length;
+    } else {
+      buf.push(line);
+      size += add;
+    }
+  }
+  if (buf.length) chunks.push(buf.join('\n'));
+  return chunks;
+}
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('draft-board')
@@ -51,14 +71,14 @@ module.exports = {
     .addIntegerOption((o) =>
       o
         .setName('limit')
-        .setDescription('How many latest draft-order slots to show (default 20)')
+        .setDescription('Max slots to show from the end (default: all, max 200)')
         .setMinValue(1)
-        .setMaxValue(50),
+        .setMaxValue(200),
     ),
 
   async execute(interaction) {
     const manager = interaction.options.getUser('manager');
-    const limit = interaction.options.getInteger('limit') || 20;
+    const limitOpt = interaction.options.getInteger('limit');
     const state = engine.getState();
     engine.syncTeamsFromOrder(state);
 
@@ -76,7 +96,10 @@ module.exports = {
     }
 
     entries.sort((a, b) => a.round - b.round || a.pick - b.pick);
-    entries = entries.slice(-limit);
+    const total = entries.length;
+    if (limitOpt != null) {
+      entries = entries.slice(-limitOpt);
+    }
 
     if (!entries.length) {
       await interaction.reply({
@@ -86,8 +109,16 @@ module.exports = {
       return;
     }
 
-    let body = entries.map(formatEntry).join('\n');
-    if (body.length > 1900) body = `${body.slice(0, 1900)}…`;
-    await interaction.reply({ content: body, ephemeral: true });
+    const header =
+      entries.length < total
+        ? `_Showing last **${entries.length}** of **${total}** slots_\n`
+        : `_**${total}** slots_\n`;
+    const lines = entries.map(formatEntry);
+    const chunks = chunkLines([header.trimEnd(), ...lines]);
+
+    await interaction.reply({ content: chunks[0], ephemeral: true });
+    for (let i = 1; i < chunks.length; i += 1) {
+      await interaction.followUp({ content: chunks[i], ephemeral: true });
+    }
   },
 };
