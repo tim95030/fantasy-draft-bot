@@ -18,14 +18,9 @@ function formatWarningList(warnings, secondsPerPick) {
   );
 }
 
-/** Reschedule the active pick clock so new warning thresholds apply immediately. */
-function rescheduleClockIfRunning() {
-  const state = engine.getState();
-  if (state.status !== 'running' || state.sleepPaused) return false;
-  if (state.clockEndsAt == null) return false;
-  const remainingMs = Math.max(0, state.clockEndsAt - Date.now());
-  engine.startClock(state, { remainingMs });
-  return true;
+/** Refresh warning timers only — never resets the pick expire deadline. */
+function refreshWarningsIfRunning() {
+  return engine.refreshWarnings();
 }
 
 module.exports = {
@@ -99,7 +94,7 @@ module.exports = {
 
     if (sub === 'clear') {
       updateConfig({ pickWarningsSec: [] });
-      rescheduleClockIfRunning();
+      refreshWarningsIfRunning();
       await interaction.reply({
         content: 'Cleared all pick warnings.',
         ephemeral: true,
@@ -128,12 +123,11 @@ module.exports = {
       }
       const next = normalizePickWarnings([...existing, seconds], clock);
       updateConfig({ pickWarningsSec: next });
-      const rescheduled = rescheduleClockIfRunning();
+      refreshWarningsIfRunning();
       await interaction.reply({
         content:
           `Added warning at **${formatDuration(seconds)}** remaining.\n` +
-          formatWarningList(next, clock) +
-          (rescheduled ? '\n_(Active clock rescheduled with new warnings.)_' : ''),
+          formatWarningList(next, clock),
         ephemeral: true,
       });
       return;
@@ -153,12 +147,11 @@ module.exports = {
       }
       const next = existing.filter((s) => s !== seconds);
       updateConfig({ pickWarningsSec: next });
-      const rescheduled = rescheduleClockIfRunning();
+      refreshWarningsIfRunning();
       await interaction.reply({
         content:
           `Removed warning at **${formatDuration(seconds)}** remaining.\n` +
-          formatWarningList(next, clock) +
-          (rescheduled ? '\n_(Active clock rescheduled.)_' : ''),
+          formatWarningList(next, clock),
         ephemeral: true,
       });
     }

@@ -293,6 +293,17 @@ class DraftEngine {
     });
   }
 
+  /** Update warning timers for the active pick without touching the expire deadline. */
+  refreshWarnings() {
+    const state = this.getState();
+    if (state.status !== 'running' || state.sleepPaused) return false;
+    if (state.clockEndsAt == null) return false;
+    const config = this.getConfig();
+    return this.timer.refreshWarnings(config.pickWarningsSec || [], async (secondsLeft) => {
+      await this.announceWarning(secondsLeft);
+    });
+  }
+
   startClock(state, { remainingMs = null } = {}) {
     const config = this.getConfig();
     if (state.status !== 'running') return;
