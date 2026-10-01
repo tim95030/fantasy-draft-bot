@@ -8,6 +8,8 @@ const {
   sleepWindowLabel,
   nextSleepEndDate,
   formatInZone,
+  searchNorthAmericaTimezones,
+  utcOffsetLabel,
 } = require('../draft/sleepHours');
 
 module.exports = {
@@ -37,8 +39,9 @@ module.exports = {
         .addStringOption((o) =>
           o
             .setName('timezone')
-            .setDescription('IANA timezone, e.g. America/Los_Angeles')
-            .setRequired(true),
+            .setDescription('Search a North American timezone (shows UTC offset)')
+            .setRequired(true)
+            .setAutocomplete(true),
         )
         .addBooleanOption((o) =>
           o
@@ -55,6 +58,13 @@ module.exports = {
       sc.setName('disable').setDescription('Turn sleep hours off'),
     ),
 
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused(true);
+    if (focused.name !== 'timezone') return;
+    const choices = searchNorthAmericaTimezones(focused.value, 25);
+    await interaction.respond(choices);
+  },
+
   async execute(interaction) {
     if (!isAdmin(interaction.user.id, interaction.member)) {
       await interaction.reply({ content: 'Admin only.', ephemeral: true });
@@ -67,13 +77,15 @@ module.exports = {
     if (sub === 'status') {
       const sleeping = isInSleepWindow(config);
       const wake = sleeping ? nextSleepEndDate(config) : null;
+      const tz = config.sleepTimezone || 'America/Los_Angeles';
       await interaction.reply({
         content: [
           `Sleep enabled: **${config.sleepEnabled}**`,
           `Window: **${sleepWindowLabel(config)}**`,
+          `Timezone id: \`${tz}\`${isValidTimeZone(tz) ? ` (${utcOffsetLabel(tz)})` : ''}`,
           `Currently sleeping: **${sleeping}**`,
           wake
-            ? `Resumes: **${formatInZone(wake, config.sleepTimezone || 'America/Los_Angeles')}**`
+            ? `Resumes: **${formatInZone(wake, tz)}**`
             : null,
           'During sleep the pick **timer** pauses; managers can still make picks.',
         ]
@@ -126,7 +138,8 @@ module.exports = {
     }
     if (!isValidTimeZone(timezone)) {
       await interaction.reply({
-        content: `Invalid timezone \`${timezone}\`. Use an IANA name like \`America/Los_Angeles\`, \`America/New_York\`, \`America/Chicago\`.`,
+        content:
+          'Pick a timezone from the autocomplete list (type to search, e.g. `pacific` or `chicago`).',
         ephemeral: true,
       });
       return;
@@ -153,7 +166,7 @@ module.exports = {
         'Sleep hours saved:',
         `• Enabled: **${next.sleepEnabled}**`,
         `• Window: **${sleepWindowLabel(next)}**`,
-        `• Example: timer pauses at ${next.sleepStart} and resumes at ${next.sleepEnd} (${next.sleepTimezone})`,
+        `• Example: timer pauses at ${next.sleepStart} and resumes at ${next.sleepEnd}`,
         'Picks remain allowed during sleep; only the countdown pauses.',
       ].join('\n'),
       ephemeral: true,
