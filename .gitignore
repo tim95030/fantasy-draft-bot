@@ -7,3 +7,5 @@ data/config.json
 data/draft-state.json
 data/preset-picks.csv
 *.log
+*.swp
+.env.*

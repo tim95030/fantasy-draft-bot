@@ -9,6 +9,7 @@ const DEFAULTS = {
   totalRounds: 10,
   secondsPerPick: 120,
   snake: true,
+  allowDuplicateOwners: false,
 };
 
 function ensureConfigFile() {

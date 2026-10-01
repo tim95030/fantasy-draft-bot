@@ -9,6 +9,8 @@ const {
   validateOrder,
   buildQueue,
   findTeam,
+  slotOwnedBy,
+  mentionOwners,
 } = require('./order');
 const { loadState, saveState, resetState } = require('./state');
 const { DraftTimer } = require('./timer');
@@ -57,11 +59,12 @@ class DraftEngine {
   }
 
   openSkipsForUser(state, discordUserId) {
-    return state.skipped.filter(
-      (s) =>
-        String(s.discordUserId) === String(discordUserId) &&
-        !this.isFilled(state, s.round, s.pick),
-    );
+    const id = String(discordUserId);
+    return state.skipped.filter((s) => {
+      if (this.isFilled(state, s.round, s.pick)) return false;
+      if (Array.isArray(s.ownerIds) && s.ownerIds.map(String).includes(id)) return true;
+      return String(s.discordUserId) === id;
+    });
   }
 
   findSkip(state, round, pick) {
@@ -94,11 +97,12 @@ class DraftEngine {
 
   onClockEmbed(slot, state, secondsLeft) {
     const skips = state.skipped.filter((s) => !this.isFilled(state, s.round, s.pick));
+    const owners = mentionOwners(slot);
     const embed = new EmbedBuilder()
       .setTitle('On the clock')
       .setColor(0x1f6feb)
       .setDescription(
-        `**${slot.round}.${slot.pick}** — <@${slot.discordUserId}> (${slot.displayName})`,
+        `**${slot.round}.${slot.pick}** — **${slot.teamName || slot.displayName}** (${owners})`,
       )
       .addFields(
         {
@@ -118,7 +122,10 @@ class DraftEngine {
               ? 'None'
               : skips
                   .slice(0, 15)
-                  .map((s) => `${s.round}.${s.pick} <@${s.discordUserId}>`)
+                  .map(
+                    (s) =>
+                      `${s.round}.${s.pick} ${s.teamName || s.displayName || ''} ${mentionOwners(s)}`,
+                  )
                   .join('\n') + (skips.length > 15 ? `\n…+${skips.length - 15} more` : ''),
         },
       )
@@ -139,7 +146,7 @@ class DraftEngine {
       : config.secondsPerPick;
 
     await channel.send({
-      content: `<@${slot.discordUserId}> you are on the clock.`,
+      content: `${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** is on the clock.`,
       embeds: [this.onClockEmbed(slot, state, secondsLeft)],
     });
   }
@@ -184,6 +191,8 @@ class DraftEngine {
         round: slot.round,
         pick: slot.pick,
         discordUserId: slot.discordUserId,
+        ownerIds: slot.ownerIds || [slot.discordUserId],
+        teamName: slot.teamName || slot.displayName,
         displayName: slot.displayName,
         overallIndex: slot.overallIndex,
         skippedAt: new Date().toISOString(),
@@ -193,7 +202,7 @@ class DraftEngine {
     const channel = await this.getDraftChannel();
     if (channel) {
       await channel.send(
-        `Time expired — **${slot.round}.${slot.pick}** for <@${slot.discordUserId}> marked **skipped**. They can still claim it later.`,
+        `Time expired — **${slot.round}.${slot.pick}** for **${slot.teamName || slot.displayName}** (${mentionOwners(slot)}) marked **skipped**. They can still claim it later.`,
       );
     }
 
@@ -262,7 +271,9 @@ class DraftEngine {
   startDraft({ announce = true } = {}) {
     const config = this.getConfig();
     const order = this.getOrder();
-    const err = validateOrder(order);
+    const err = validateOrder(order, {
+      allowDuplicateOwners: order.allowDuplicateOwners || config.allowDuplicateOwners,
+    });
     if (err) throw new Error(err);
     if (!config.draftChannelId) throw new Error('Set a draft channel with /draft-setup first.');
     if (pool.size === 0) throw new Error('Load players first (/draft-import-players).');
@@ -348,6 +359,8 @@ class DraftEngine {
         round: slot.round,
         pick: slot.pick,
         discordUserId: slot.discordUserId,
+        ownerIds: slot.ownerIds || [slot.discordUserId],
+        teamName: slot.teamName || slot.displayName,
         displayName: slot.displayName,
         overallIndex: slot.overallIndex,
         skippedAt: new Date().toISOString(),
@@ -382,7 +395,7 @@ class DraftEngine {
     const order = this.getOrder();
     const manager = findTeam(order, discordUserId);
     if (!manager && !adminOverride) {
-      throw new Error('You are not in the draft order.');
+      throw new Error('You are not an owner of any draft team.');
     }
 
     const current = this.currentSlot(state);
@@ -396,31 +409,35 @@ class DraftEngine {
         throw new Error(`${round}.${pick} is already filled.`);
       }
 
-      const ownsSlot = String(targetSlot.discordUserId) === String(discordUserId);
+      const ownsSlot = slotOwnedBy(targetSlot, discordUserId);
       const isCurrent =
         current && current.round === round && current.pick === pick && ownsSlot;
+      const skip = this.findSkip(state, round, pick);
       const skippedOwned =
-        this.isSkipped(state, round, pick) &&
-        String(this.findSkip(state, round, pick).discordUserId) === String(discordUserId);
+        Boolean(skip) &&
+        (slotOwnedBy(skip, discordUserId) ||
+          (Array.isArray(skip.ownerIds)
+            ? skip.ownerIds.map(String).includes(String(discordUserId))
+            : String(skip.discordUserId) === String(discordUserId)));
 
       if (!adminOverride && !isCurrent && !skippedOwned) {
         throw new Error(
-          `You cannot fill ${round}.${pick}. Wait for your turn or claim one of your skipped picks.`,
+          `You cannot fill ${round}.${pick}. Wait for your team's turn or claim one of your skipped picks.`,
         );
       }
       isCatchUp = Boolean(skippedOwned && !isCurrent);
     } else {
-      // No explicit slot: current turn, else earliest open skip for this user
+      // No explicit slot: current turn (if this user owns it), else earliest open skip
       if (
         current &&
-        String(current.discordUserId) === String(discordUserId) &&
+        slotOwnedBy(current, discordUserId) &&
         !this.isFilled(state, current.round, current.pick)
       ) {
         targetSlot = current;
       } else {
         const skips = this.openSkipsForUser(state, discordUserId);
         if (!skips.length && !adminOverride) {
-          throw new Error('It is not your turn and you have no open skipped picks.');
+          throw new Error("It is not your team's turn and you have no open skipped picks.");
         }
         if (skips.length) {
           const s = skips[0];
@@ -435,8 +452,6 @@ class DraftEngine {
     if (adminOverride && round != null && pick != null) {
       targetSlot = state.queue.find((s) => s.round === round && s.pick === pick) || targetSlot;
       if (!targetSlot) throw new Error(`Slot ${round}.${pick} not found.`);
-      // Admin may assign to the slot's owner regardless of who invoked
-      discordUserId = targetSlot.discordUserId;
     }
 
     const pickRecord = {
@@ -446,9 +461,10 @@ class DraftEngine {
       playerName: player.name,
       position: player.position,
       team: player.team,
-      discordUserId: String(targetSlot.discordUserId),
-      displayName:
-        findTeam(order, targetSlot.discordUserId)?.displayName || targetSlot.displayName,
+      discordUserId: String(discordUserId),
+      ownerIds: targetSlot.ownerIds || [targetSlot.discordUserId],
+      teamName: targetSlot.teamName || targetSlot.displayName,
+      displayName: targetSlot.teamName || targetSlot.displayName,
       at: new Date().toISOString(),
       source,
       catchUp: isCatchUp,

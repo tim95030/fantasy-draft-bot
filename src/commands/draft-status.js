@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { engine } = require('../draft/engine');
+const { mentionOwners } = require('../draft/order');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -16,7 +17,7 @@ module.exports = {
         {
           name: 'On the clock',
           value: slot
-            ? `**${slot.round}.${slot.pick}** <@${slot.discordUserId}> (${slot.displayName})`
+            ? `**${slot.round}.${slot.pick}** **${slot.teamName || slot.displayName}** (${mentionOwners(slot)})`
             : '—',
           inline: true,
         },
@@ -42,7 +43,10 @@ module.exports = {
               ? 'None'
               : openSkips
                   .slice(0, 20)
-                  .map((s) => `${s.round}.${s.pick} <@${s.discordUserId}>`)
+                  .map(
+                    (s) =>
+                      `${s.round}.${s.pick} ${s.teamName || s.displayName || ''} ${mentionOwners(s)}`,
+                  )
                   .join('\n') +
                 (openSkips.length > 20 ? `\n…+${openSkips.length - 20} more` : ''),
         },

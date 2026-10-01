@@ -2,6 +2,7 @@ const { SlashCommandBuilder } = require('discord.js');
 const { isAdmin } = require('../config');
 const { pool } = require('../draft/players');
 const { engine } = require('../draft/engine');
+const { slotOwnedBy } = require('../draft/order');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -68,7 +69,7 @@ module.exports = {
     let pick;
     if (
       current &&
-      String(current.discordUserId) === String(drafterId) &&
+      slotOwnedBy(current, drafterId) &&
       !engine.isFilled(state, current.round, current.pick)
     ) {
       round = current.round;

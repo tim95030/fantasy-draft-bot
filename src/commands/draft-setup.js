@@ -27,6 +27,18 @@ module.exports = {
     .addBooleanOption((o) =>
       o.setName('snake').setDescription('Use snake draft order'),
     )
+    .addBooleanOption((o) =>
+      o
+        .setName('allow_duplicate_owners')
+        .setDescription('Allow same Discord user on multiple teams (for testing)'),
+    )
+    .addIntegerOption((o) =>
+      o
+        .setName('team_count')
+        .setDescription('Resize team slots now (1–64). Only when draft is not running.')
+        .setMinValue(1)
+        .setMaxValue(64),
+    )
     .addUserOption((o) =>
       o.setName('add_admin').setDescription('Add a draft admin'),
     )
@@ -45,6 +57,8 @@ module.exports = {
     const totalRounds = interaction.options.getInteger('total_rounds');
     const seconds = interaction.options.getInteger('seconds_per_pick');
     const snake = interaction.options.getBoolean('snake');
+    const allowDup = interaction.options.getBoolean('allow_duplicate_owners');
+    const teamCount = interaction.options.getInteger('team_count');
     const addAdmin = interaction.options.getUser('add_admin');
     const removeAdmin = interaction.options.getUser('remove_admin');
 
@@ -54,8 +68,11 @@ module.exports = {
     if (totalRounds != null) partial.totalRounds = totalRounds;
     if (seconds != null) partial.secondsPerPick = seconds;
     if (snake != null) partial.snake = snake;
+    if (allowDup != null) partial.allowDuplicateOwners = allowDup;
 
     const { loadConfig } = require('../config');
+    const { loadOrder, saveOrder, resizeTeams } = require('../draft/order');
+    const { engine } = require('../draft/engine');
     const current = loadConfig();
     let adminUserIds = [...(current.adminUserIds || [])].map(String);
     if (!adminUserIds.includes(String(interaction.user.id))) {
@@ -70,6 +87,26 @@ module.exports = {
     }
     partial.adminUserIds = adminUserIds;
 
+    let sizeNote = '';
+    if (teamCount != null) {
+      const state = engine.getState();
+      if (state.status === 'running' || state.status === 'paused') {
+        sizeNote =
+          '\n• Team count **not** changed (draft is active — `/draft-end` first).';
+      } else {
+        const order = loadOrder();
+        if (snake != null) order.snake = snake;
+        if (allowDup != null) order.allowDuplicateOwners = allowDup;
+        saveOrder(resizeTeams(order, teamCount));
+        sizeNote = `\n• Team slots: **${teamCount}** (edit names/owners with \`/draft-order edit\`)`;
+      }
+    } else if (allowDup != null || snake != null) {
+      const order = loadOrder();
+      if (snake != null) order.snake = snake;
+      if (allowDup != null) order.allowDuplicateOwners = allowDup;
+      saveOrder(order);
+    }
+
     const config = updateConfig(partial);
     await interaction.reply({
       content: [
@@ -79,8 +116,12 @@ module.exports = {
         `• Total rounds: **${config.totalRounds}**`,
         `• Seconds/pick: **${config.secondsPerPick}**`,
         `• Snake: **${config.snake}**`,
+        `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
-      ].join('\n'),
+        sizeNote,
+      ]
+        .filter(Boolean)
+        .join('\n'),
       ephemeral: true,
     });
   },

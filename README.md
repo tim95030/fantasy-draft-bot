@@ -16,6 +16,39 @@ It supports:
 
 See **[deploy/ORACLE.md](deploy/ORACLE.md)** for Always Free VM setup: create instance, install Node, systemd, and upload player CSV.
 
+## Draft teams (names + co-owners)
+
+Team count is **not** fixed at 32 anymore.
+
+```text
+/draft-setup allow_duplicate_owners:True team_count:4
+/draft-order size count:4
+/draft-order edit slot:1 team_name:Thunder owners:@alice @bob
+/draft-order edit slot:2 team_name:Lightning owners:@carol
+/draft-order show
+```
+
+- **`allow_duplicate_owners`** — same Discord user can own multiple slots (useful for solo testing)
+- **Co-owners** — any listed owner can pick when that team is on the clock (or claim that team’s skips)
+- **CSV import** (`/draft-order set` attachment):
+
+```csv
+teamName,ownerDiscordIds
+Thunder,111111111111111111;222222222222222222
+Lightning,333333333333333333
+```
+
+Or one owner per row with a shared team name/slot:
+
+```csv
+slot,teamName,discordUserId
+1,Thunder,111111111111111111
+1,Thunder,222222222222222222
+2,Lightning,333333333333333333
+```
+
+Resize only works when the draft is **not** running (`/draft-end` first if needed).
+
 ## Absolute beginner guide: run this from scratch
 
 Follow these sections **in order**. You only need to do the Discord Developer Portal steps once.
