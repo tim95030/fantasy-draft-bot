@@ -17,8 +17,12 @@ async function main() {
   ensureConfigFile();
   ensureOrderFile();
 
-  if (!fs.existsSync(paths.PLAYERS_CSV) && fs.existsSync(paths.PLAYERS_SAMPLE)) {
-    fs.copyFileSync(paths.PLAYERS_SAMPLE, paths.PLAYERS_CSV);
+  if (!fs.existsSync(paths.PLAYERS_CSV)) {
+    if (fs.existsSync(paths.PLAYERS_DEFAULT)) {
+      fs.copyFileSync(paths.PLAYERS_DEFAULT, paths.PLAYERS_CSV);
+    } else if (fs.existsSync(paths.PLAYERS_SAMPLE)) {
+      fs.copyFileSync(paths.PLAYERS_SAMPLE, paths.PLAYERS_CSV);
+    }
   }
 
   try {

@@ -1,0 +1,7 @@
+fantraxId,name,position,team,taken
+FX001,Connor McDavid,C,EDM,true
+FX002,Leon Draisaitl,C,EDM,true
+FX003,John Doe,LW,ANA,false
+FX004,Jane Smith,RW,ANA,false
+FX005,Alex Example,D,TOR,false
+FX006,Sam Goalie,G,BOS,false

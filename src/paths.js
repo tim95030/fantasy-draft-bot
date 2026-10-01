@@ -7,6 +7,7 @@ module.exports = {
   ROOT,
   DATA,
   PLAYERS_CSV: path.join(DATA, 'players.csv'),
+  PLAYERS_DEFAULT: path.join(DATA, 'players.default.csv'),
   PLAYERS_SAMPLE: path.join(DATA, 'players.sample.csv'),
   ORDER_JSON: path.join(DATA, 'draft-order.json'),
   ORDER_SAMPLE: path.join(DATA, 'draft-order.sample.json'),

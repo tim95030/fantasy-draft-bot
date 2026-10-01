@@ -147,7 +147,9 @@ class PlayerPool {
 
   loadFromFile(filePath = paths.PLAYERS_CSV) {
     if (!fs.existsSync(filePath)) {
-      if (fs.existsSync(paths.PLAYERS_SAMPLE)) {
+      if (filePath === paths.PLAYERS_CSV && fs.existsSync(paths.PLAYERS_DEFAULT)) {
+        fs.copyFileSync(paths.PLAYERS_DEFAULT, paths.PLAYERS_CSV);
+      } else if (filePath === paths.PLAYERS_CSV && fs.existsSync(paths.PLAYERS_SAMPLE)) {
         fs.copyFileSync(paths.PLAYERS_SAMPLE, paths.PLAYERS_CSV);
       } else {
         throw new Error(`Missing players file: ${filePath}`);
@@ -162,6 +164,11 @@ class PlayerPool {
       rows.push([p.fantraxId, p.name, p.position, p.team, p.taken ? 'true' : 'false']);
     }
     fs.writeFileSync(filePath, `${toCsv(rows)}\n`);
+  }
+
+  /** Persist current pool as the committed default baseline. */
+  saveAsDefault() {
+    this.saveToFile(paths.PLAYERS_DEFAULT);
   }
 
   get size() {
