@@ -556,6 +556,80 @@ class DraftEngine {
     };
   }
 
+  /**
+   * Replace an existing pick with an available player.
+   * Old player returns to the available pool.
+   */
+  replacePick({
+    discordUserId,
+    round,
+    pick,
+    newFantraxId,
+    adminOverride = false,
+  }) {
+    const state = this.getState();
+    if (state.status !== 'running' && state.status !== 'paused' && state.status !== 'ended') {
+      throw new Error('No draft picks to edit yet.');
+    }
+
+    const existing = state.picks.find((p) => p.round === round && p.pick === pick);
+    if (!existing) {
+      throw new Error(`No recorded pick at ${round}.${pick}.`);
+    }
+
+    const owns =
+      slotOwnedBy(existing, discordUserId) ||
+      (Array.isArray(existing.ownerIds) &&
+        existing.ownerIds.map(String).includes(String(discordUserId))) ||
+      String(existing.discordUserId) === String(discordUserId);
+
+    if (!adminOverride && !owns) {
+      throw new Error(`You can only edit picks for your own team (${existing.teamName || 'unknown'}).`);
+    }
+
+    const newPlayer = pool.get(newFantraxId);
+    if (!newPlayer) throw new Error(`Unknown player id: ${newFantraxId}`);
+    if (newPlayer.taken && newPlayer.fantraxId !== existing.fantraxId) {
+      throw new Error(`${newPlayer.name} is already drafted.`);
+    }
+    if (newPlayer.fantraxId === existing.fantraxId) {
+      throw new Error('That player is already in this slot.');
+    }
+
+    const oldPlayer = pool.get(existing.fantraxId);
+    const previous = { ...existing };
+
+    if (oldPlayer) pool.markTaken(oldPlayer.fantraxId, false);
+    pool.markTaken(newPlayer.fantraxId, true);
+    pool.saveToFile();
+
+    existing.fantraxId = newPlayer.fantraxId;
+    existing.playerName = newPlayer.name;
+    existing.position = newPlayer.position;
+    existing.team = newPlayer.team;
+    existing.at = new Date().toISOString();
+    existing.source = 'edit';
+    existing.editedBy = String(discordUserId);
+    existing.replacedFantraxId = previous.fantraxId;
+
+    this.persist(state);
+
+    return {
+      previous,
+      pickRecord: existing,
+      newPlayer,
+      oldPlayer,
+      line: formatPickLine(
+        existing.round,
+        existing.pick,
+        newPlayer.name,
+        newPlayer.position,
+        newPlayer.team,
+      ),
+      state: this.getState(),
+    };
+  }
+
   undoLast() {
     const state = this.getState();
     if (!state.picks.length) throw new Error('No picks to undo.');
