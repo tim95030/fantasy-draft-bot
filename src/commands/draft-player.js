@@ -210,7 +210,7 @@ module.exports = {
       );
 
       if (result.wasCurrent && result.state.status === 'running') {
-        await engine.announceOnClock(result.state);
+        await engine.proceedToNextPick();
       }
     } catch (err) {
       await interaction.reply({

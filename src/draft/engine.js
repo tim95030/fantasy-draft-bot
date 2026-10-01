@@ -339,11 +339,6 @@ class DraftEngine {
       return;
     }
 
-    // Autodraft before human timer / sleep pause. submitPick → startClock for next slot.
-    if (this.tryAutoDraftOnce(state, slot)) {
-      return;
-    }
-
     const fullMs = Math.max(1, config.secondsPerPick) * 1000;
     const ms =
       remainingMs != null && remainingMs > 0 ? remainingMs : fullMs;
@@ -378,40 +373,71 @@ class DraftEngine {
   }
 
   /**
+   * After a human pick/skip (or at draft start): run autodrafts in order with
+   * awaited announcements, then start the human clock and announce who's up.
+   * Callers that post a "Recorded …" line should await that message first.
+   */
+  async proceedToNextPick({ remainingMs = null, announce = true } = {}) {
+    const state = this.getState();
+    if (state.status !== 'running') return state;
+
+    while (true) {
+      const slot = this.advanceToNextOpen(state);
+      if (!slot) {
+        state.status = 'ended';
+        state.clockEndsAt = null;
+        state.sleepPaused = false;
+        state.sleepRemainingMs = null;
+        this.timer.clear();
+        this.persist(state);
+        const channel = await this.getDraftChannel();
+        if (channel) await channel.send('Draft complete — all slots filled.');
+        return this.getState();
+      }
+
+      const autoResult = this.tryAutoDraftOnce(state, slot);
+      if (!autoResult) break;
+      await this.announceAutodraft(autoResult);
+    }
+
+    this.startClock(this.getState(), { remainingMs });
+    if (announce && this.getState().status === 'running') {
+      await this.announceOnClock(this.getState());
+    }
+    return this.getState();
+  }
+
+  /**
    * If the on-clock team has autodraft enabled, submit the first available
-   * queued player. Returns true when a pick was made (startClock already
-   * re-entered for the following slot via submitPick).
+   * queued player. Returns the submitPick result, or null.
+   * Does not start the clock — caller runs proceedToNextPick / startClock.
    */
   tryAutoDraftOnce(state, slot) {
-    if (!slot || slot.teamIndex == null || slot.teamIndex < 0) return false;
-    if (this.isFilled(state, slot.round, slot.pick)) return false;
+    if (!slot || slot.teamIndex == null || slot.teamIndex < 0) return null;
+    if (this.isFilled(state, slot.round, slot.pick)) return null;
 
     const entry = playerQueue.getEntry(slot.teamIndex);
-    if (!entry.autoDraft) return false;
+    if (!entry.autoDraft) return null;
 
     const drafterId = String(
       slot.discordUserId ||
         (Array.isArray(slot.ownerIds) && slot.ownerIds[0]) ||
         '',
     );
-    if (!drafterId) return false;
+    if (!drafterId) return null;
 
     while (true) {
       const fantraxId = playerQueue.shiftNextAvailable(slot.teamIndex, pool);
-      if (!fantraxId) return false;
+      if (!fantraxId) return null;
 
       try {
-        const result = this.submitPick({
+        return this.submitPick({
           discordUserId: drafterId,
           fantraxId,
           round: slot.round,
           pick: slot.pick,
           source: 'autodraft',
         });
-        this.announceAutodraft(result).catch((err) =>
-          console.error('announceAutodraft failed:', err),
-        );
-        return true;
       } catch (err) {
         console.warn(
           `Autodraft skipped ${fantraxId} for ${slot.round}.${slot.pick}: ${err.message}`,
@@ -446,8 +472,7 @@ class DraftEngine {
     const slot = this.currentSlot(state);
     if (!slot) return;
     if (this.isFilled(state, slot.round, slot.pick)) {
-      this.startClock(state);
-      await this.announceOnClock(state);
+      await this.proceedToNextPick();
       return;
     }
 
@@ -474,8 +499,7 @@ class DraftEngine {
 
     state.currentIndex += 1;
     this.persist(state);
-    this.startClock(state);
-    await this.announceOnClock(state);
+    await this.proceedToNextPick();
   }
 
   /**
@@ -629,11 +653,11 @@ class DraftEngine {
     this.advanceToNextOpen(state);
     this.persist(state);
     pool.saveToFile();
-    this.startClock(state);
 
     if (announce) {
-      return this.announceOnClock(state).then(() => state);
+      return this.proceedToNextPick().then(() => this.getState());
     }
+    this.startClock(state);
     return state;
   }
 
@@ -653,8 +677,7 @@ class DraftEngine {
     state.status = 'running';
     state.pausedAt = null;
     this.persist(state);
-    this.startClock(state);
-    return this.announceOnClock(state).then(() => state);
+    return this.proceedToNextPick();
   }
 
   end() {
@@ -691,8 +714,8 @@ class DraftEngine {
     }
     state.currentIndex += 1;
     this.persist(state);
-    if (state.status === 'running') this.startClock(state);
-    return { state, slot };
+    // Caller must await proceedToNextPick() after posting the skip notice
+    return { state: this.getState(), slot };
   }
 
   /**
@@ -796,8 +819,11 @@ class DraftEngine {
 
     if (wasCurrent) {
       state.currentIndex += 1;
+      state.clockEndsAt = null;
+      this.timer.clear();
       this.persist(state);
-      if (state.status === 'running') this.startClock(state);
+      // Do not startClock/autodraft here — callers post the pick first, then
+      // await proceedToNextPick() so announcements stay in order.
     } else {
       this.persist(state);
     }
@@ -1001,9 +1027,7 @@ class DraftEngine {
       );
     }
 
-    this.startClock(state, { remainingMs: rem });
-    await this.announceOnClock(this.getState());
-    return this.getState();
+    return this.proceedToNextPick({ remainingMs: rem });
   }
 
   /**
