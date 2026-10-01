@@ -72,6 +72,26 @@ function normalize(s) {
     .replace(/\s+/g, ' ');
 }
 
+function editDistance(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (s === t) return 0;
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+  const prev = new Array(t.length + 1);
+  const cur = new Array(t.length + 1);
+  for (let j = 0; j <= t.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= s.length; i += 1) {
+    cur[0] = i;
+    for (let j = 1; j <= t.length; j += 1) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= t.length; j += 1) prev[j] = cur[j];
+  }
+  return prev[t.length];
+}
+
 function truthy(v) {
   const s = String(v || '')
     .trim()
@@ -200,6 +220,47 @@ class PlayerPool {
   findByName(name) {
     const n = normalize(name);
     return [...this.byId.values()].filter((p) => normalize(p.name) === n);
+  }
+
+  /**
+   * Near-match suggestions for mistyped pick lines (e.g. "conor mcdavid").
+   */
+  suggest(query, { availableOnly = false, limit = 5 } = {}) {
+    const q = normalize(query);
+    if (q.length < 2) return [];
+
+    const qParts = q.split(' ').filter(Boolean);
+    const qLast = qParts[qParts.length - 1] || q;
+    const candidates = availableOnly ? this.available() : [...this.byId.values()];
+    const scored = [];
+
+    for (const p of candidates) {
+      const name = normalize(p.name);
+      const parts = name.split(' ').filter(Boolean);
+      const last = parts[parts.length - 1] || '';
+      const first = parts[0] || '';
+
+      let score = 0;
+      if (name === q) score = 1000;
+      else if (name.startsWith(q) || name.includes(q)) score = 800;
+      else if (qLast.length >= 3 && last.startsWith(qLast)) score = 700;
+      else if (qLast.length >= 3 && last.includes(qLast)) score = 600;
+      else if (qLast.length >= 4 && editDistance(last, qLast) <= 2) score = 550;
+      else if (qParts.length >= 2 && last === qLast && editDistance(first, qParts[0]) <= 2) {
+        score = 650;
+      } else if (q.length >= 5 && editDistance(name, q) <= Math.max(2, Math.floor(q.length / 5))) {
+        score = 500;
+      } else continue;
+
+      // Prefer available players slightly
+      if (!p.taken) score += 5;
+      scored.push({ score, player: p });
+    }
+
+    scored.sort(
+      (a, b) => b.score - a.score || a.player.name.localeCompare(b.player.name),
+    );
+    return scored.slice(0, limit).map((s) => s.player);
   }
 
   /**
