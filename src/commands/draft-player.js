@@ -9,14 +9,28 @@ const {
   ownerIds,
 } = require('../draft/order');
 
-function teamMatchesSlot(team, slot) {
+/**
+ * Match a fantasy team to a queue/skip slot by team identity — not owner IDs.
+ * Owner overlap is wrong when allow_duplicate_owners lets one Discord user
+ * own multiple teams (e.g. admin catch-up for Sharks while another owned
+ * team is on the clock).
+ */
+function teamMatchesSlot(team, slot, teamIndex = null) {
   if (!team || !slot) return false;
-  if (slot.teamName && team.teamName && slot.teamName === team.teamName) return true;
-  const ids = new Set(ownerIds(team).map(String));
-  if (Array.isArray(slot.ownerIds) && slot.ownerIds.some((id) => ids.has(String(id)))) {
+  if (
+    teamIndex != null &&
+    Number.isInteger(slot.teamIndex) &&
+    Number(slot.teamIndex) === Number(teamIndex)
+  ) {
     return true;
   }
-  return ids.has(String(slot.discordUserId));
+  const teamName = String(team.teamName || '')
+    .trim()
+    .toLowerCase();
+  const slotName = String(slot.teamName || slot.displayName || '')
+    .trim()
+    .toLowerCase();
+  return Boolean(teamName && slotName && teamName === slotName);
 }
 
 function resolveTeamFromOption(value) {
@@ -157,34 +171,34 @@ module.exports = {
       adminOverride = true;
       const owners = ownerIds(targetTeam.team);
       drafterId = owners[0] || interaction.user.id;
+      const idx = targetTeam.index;
 
-      const teamSkip = state.skipped.find(
-        (s) =>
-          !engine.isFilled(state, s.round, s.pick) && teamMatchesSlot(targetTeam.team, s),
-      );
+      const teamSkips = state.skipped
+        .filter(
+          (s) =>
+            !engine.isFilled(state, s.round, s.pick) &&
+            teamMatchesSlot(targetTeam.team, s, idx),
+        )
+        .sort((a, b) => a.round - b.round || a.pick - b.pick);
+      const teamSkip = teamSkips[0];
 
-      if (
+      const onClockForTeam =
         current &&
-        teamMatchesSlot(targetTeam.team, current) &&
-        !engine.isFilled(state, current.round, current.pick)
-      ) {
+        teamMatchesSlot(targetTeam.team, current, idx) &&
+        !engine.isFilled(state, current.round, current.pick);
+
+      if (onClockForTeam) {
         round = current.round;
         pick = current.pick;
       } else if (teamSkip) {
         round = teamSkip.round;
         pick = teamSkip.pick;
-      } else if (current) {
-        // Admin force onto the named team's identity for the current clock? No —
-        // require the team to be due or skipped.
+      } else {
         await interaction.reply({
           content: `**${targetTeam.team.teamName}** is not on the clock and has no open skipped picks. Use \`/draft-set-pick\` to force a specific round.pick.`,
           ephemeral: true,
         });
         return;
-      } else {
-        const config = engine.getConfig();
-        round = config.startRound;
-        pick = targetTeam.index + 1;
       }
     } else {
       const drafter = interaction.user.id;
