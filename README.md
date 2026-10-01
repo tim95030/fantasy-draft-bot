@@ -304,9 +304,22 @@ In Discord:
 
 ## Data files
 
-Live files under `data/` (except `*.sample.*`) are **gitignored** so secrets/league data stay local.
+Live runtime files under `data/` (`players.csv`, draft state, config, order) are **gitignored**.  
+Committed baselines: `players.default.csv` and `*.sample.*`.
 
-### `players.csv`
+### Player pool loading
+
+1. **`data/players.csv`** — live override (gitignored). Used if present.
+2. Else **`data/players.default.csv`** — committed baseline; copied to `players.csv` on first boot.
+3. Else **`data/players.sample.csv`** — tiny demo fallback.
+
+| Command | Effect |
+|---------|--------|
+| `/draft-import-players` | Replace live `players.csv` only |
+| `/draft-import-players` + `set_as_default:True` | Also write `players.default.csv` (commit that file if you want it in git) |
+| `/draft-reset-players` | Discard live overrides; reload from `players.default.csv` |
+
+### `players.csv` / `players.default.csv` format
 
 ```csv
 fantraxId,name,position,team,taken
@@ -321,8 +334,6 @@ FX003,John Doe,LW,ANA,false
 | `position` | e.g. `C`, `LW`, `D`, `G` |
 | `team` | Real NHL/club abbreviation (for identity), **not** the fantasy team |
 | `taken` | `true` if already drafted before you start the bot |
-
-Upload with `/draft-import-players`.
 
 ### `draft-order.json`
 
@@ -384,7 +395,8 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 |---------|---------|
 | `/draft-setup` | Channel, start round, rounds left, timer, snake, admins |
 | `/draft-order show` / `set` | View or set the 32-team order |
-| `/draft-import-players` | Replace player pool CSV |
+| `/draft-import-players` | Replace player pool CSV (`set_as_default` optional) |
+| `/draft-reset-players` | Reload pool from `players.default.csv` |
 | `/draft-import-presets` | Save preset picks for next start |
 | `/draft-start` | Build queue from start round and go live |
 | `/draft-pause` / `/draft-resume` | Pause/resume clock |
