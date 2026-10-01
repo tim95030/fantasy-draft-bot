@@ -247,11 +247,17 @@ class DraftEngine {
                   )
                   .join('\n') + (skips.length > 15 ? `\n…+${skips.length - 15} more` : ''),
         },
+        {
+          name: 'How to pick',
+          value:
+            'Use `/draft-player` (autocomplete) or post `Rd.pick Name POS, TEAM`',
+          inline: false,
+        },
       )
       .setFooter({
         text: sleeping
           ? `Picks still allowed. Sleep window: ${sleepWindowLabel(config)}`
-          : 'Pick format: Rd.pick Player Name POS, TEAM  e.g. 32.5 John Doe LW, ANA',
+          : 'Example: 32.5 John Doe LW, ANA',
       });
     return embed;
   }
