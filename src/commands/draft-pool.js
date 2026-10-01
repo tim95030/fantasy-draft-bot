@@ -12,8 +12,9 @@ module.exports = {
         .addStringOption((o) =>
           o
             .setName('query')
-            .setDescription('At least 2 characters')
-            .setRequired(true),
+            .setDescription('Type at least 2 characters to search')
+            .setRequired(true)
+            .setAutocomplete(true),
         )
         .addBooleanOption((o) =>
           o
@@ -22,18 +23,52 @@ module.exports = {
         ),
     ),
 
-  async execute(interaction) {
-    const query = interaction.options.getString('query');
+  async autocomplete(interaction) {
+    const focused = interaction.options.getFocused(true);
+    if (focused.name !== 'query') {
+      await interaction.respond([]);
+      return;
+    }
     const includeTaken = interaction.options.getBoolean('include_taken') || false;
-    if (query.trim().length < 2) {
+    const results = pool.search(focused.value, {
+      availableOnly: !includeTaken,
+      limit: 25,
+    });
+    await interaction.respond(
+      results.map((p) => {
+        const flag = p.taken ? 'taken' : 'avail';
+        return {
+          name: `${flag}: ${pool.formatLabel(p)}`.slice(0, 100),
+          value: p.fantraxId.slice(0, 100),
+        };
+      }),
+    );
+  },
+
+  async execute(interaction) {
+    const raw = interaction.options.getString('query');
+    const includeTaken = interaction.options.getBoolean('include_taken') || false;
+
+    // Autocomplete submits fantraxId; free-typed text is a search query.
+    const byId = pool.get(raw);
+    if (byId) {
+      const flag = byId.taken ? '❌ taken' : '✅ available';
       await interaction.reply({
-        content: 'Type at least 2 characters.',
+        content: `${flag} **${byId.name}** ${byId.position}, ${byId.team} (\`${byId.fantraxId}\`)`,
         ephemeral: true,
       });
       return;
     }
 
-    const results = pool.search(query, {
+    if (String(raw || '').trim().length < 2) {
+      await interaction.reply({
+        content: 'Type at least 2 characters (or pick from autocomplete).',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const results = pool.search(raw, {
       availableOnly: !includeTaken,
       limit: 20,
     });
