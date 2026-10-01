@@ -568,16 +568,9 @@ class DraftEngine {
     adminOverride = false,
   }) {
     const config = this.getConfig();
-    if (!config.allowEditPicks && !adminOverride) {
-      throw new Error(
-        'Pick editing is disabled. An admin can enable it with `/draft-setup allow_edit_picks:True`.',
-      );
-    }
-    // Admins using all_teams still respect the global toggle unless we allow admin bypass.
-    // Keep toggle absolute: even admins must enable the feature.
     if (!config.allowEditPicks) {
       throw new Error(
-        'Pick editing is disabled. Enable it with `/draft-setup allow_edit_picks:True`.',
+        'Pick editing is disabled. An admin can enable it with `/draft-setup allow_edit_picks:True`.',
       );
     }
 
