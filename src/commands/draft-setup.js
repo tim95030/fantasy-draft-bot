@@ -114,7 +114,7 @@ module.exports = {
         `• Channel: ${config.draftChannelId ? `<#${config.draftChannelId}>` : '_unset_'}`,
         `• Start round: **${config.startRound}**`,
         `• Total rounds: **${config.totalRounds}**`,
-        `• Seconds/pick: **${config.secondsPerPick}**`,
+        `• Seconds/pick: **${config.secondsPerPick}** (${require('../draft/formatDuration').formatDuration(config.secondsPerPick)})`,
         `• Snake: **${config.snake}**`,
         `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,

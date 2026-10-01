@@ -15,6 +15,7 @@ const {
 const { loadState, saveState, resetState } = require('./state');
 const { DraftTimer } = require('./timer');
 const { formatPickLine } = require('./parser');
+const { formatDuration } = require('./formatDuration');
 
 class DraftEngine {
   constructor() {
@@ -107,7 +108,7 @@ class DraftEngine {
       .addFields(
         {
           name: 'Time remaining',
-          value: secondsLeft != null ? `${Math.max(0, Math.ceil(secondsLeft))}s` : '—',
+          value: secondsLeft != null ? formatDuration(secondsLeft) : '—',
           inline: true,
         },
         {
