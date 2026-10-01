@@ -31,6 +31,10 @@ Admins can pause the **pick countdown** overnight while still allowing picks:
 - Remaining time on the clock is preserved and resumes when sleep ends
 - Manual `/draft-pause` is separate (pauses the whole draft clock intentionally)
 
+## Command channel lock
+
+Once `/draft-setup channel:#draft` is set, **all draft slash commands** (except `/draft-setup` itself) only work in that channel. Elsewhere you get an ephemeral reminder pointing at the draft channel. Typed pick messages were already limited to that channel.
+
 ## Pick-clock warnings
 
 Admins can re-announce who’s up as time runs out (any number of thresholds):
