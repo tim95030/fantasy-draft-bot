@@ -10,6 +10,7 @@ const DEFAULTS = {
   secondsPerPick: 120,
   snake: true,
   allowDuplicateOwners: false,
+  allowEditPicks: true,
   sleepEnabled: false,
   sleepStart: '22:00',
   sleepEnd: '08:00',

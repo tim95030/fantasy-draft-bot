@@ -32,6 +32,11 @@ module.exports = {
         .setName('allow_duplicate_owners')
         .setDescription('Allow same Discord user on multiple teams (for testing)'),
     )
+    .addBooleanOption((o) =>
+      o
+        .setName('allow_edit_picks')
+        .setDescription('Allow managers to replace their own picks with available players'),
+    )
     .addIntegerOption((o) =>
       o
         .setName('team_count')
@@ -58,6 +63,7 @@ module.exports = {
     const seconds = interaction.options.getInteger('seconds_per_pick');
     const snake = interaction.options.getBoolean('snake');
     const allowDup = interaction.options.getBoolean('allow_duplicate_owners');
+    const allowEditPicks = interaction.options.getBoolean('allow_edit_picks');
     const teamCount = interaction.options.getInteger('team_count');
     const addAdmin = interaction.options.getUser('add_admin');
     const removeAdmin = interaction.options.getUser('remove_admin');
@@ -69,6 +75,7 @@ module.exports = {
     if (seconds != null) partial.secondsPerPick = seconds;
     if (snake != null) partial.snake = snake;
     if (allowDup != null) partial.allowDuplicateOwners = allowDup;
+    if (allowEditPicks != null) partial.allowEditPicks = allowEditPicks;
 
     const { loadConfig } = require('../config');
     const { loadOrder, saveOrder, resizeTeams } = require('../draft/order');
@@ -117,6 +124,7 @@ module.exports = {
         `• Seconds/pick: **${config.secondsPerPick}** (${require('../draft/formatDuration').formatDuration(config.secondsPerPick)})`,
         `• Snake: **${config.snake}**`,
         `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
+        `• Allow edit picks: **${config.allowEditPicks}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
       ]

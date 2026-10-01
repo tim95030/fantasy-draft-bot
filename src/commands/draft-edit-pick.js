@@ -1,8 +1,17 @@
 const { SlashCommandBuilder } = require('discord.js');
-const { isAdmin } = require('../config');
+const { isAdmin, loadConfig } = require('../config');
 const { pool } = require('../draft/players');
 const { engine } = require('../draft/engine');
-const { slotOwnedBy, loadOrder, normalizeTeam, ownerIds } = require('../draft/order');
+const { loadOrder, normalizeTeam, ownerIds } = require('../draft/order');
+
+function assertEditPicksEnabled() {
+  const config = loadConfig();
+  if (!config.allowEditPicks) {
+    throw new Error(
+      'Pick editing is disabled. An admin can enable it with `/draft-setup allow_edit_picks:True`.',
+    );
+  }
+}
 
 function userOwnsPick(pick, userId) {
   const id = String(userId);
@@ -72,6 +81,12 @@ module.exports = {
     ),
 
   async autocomplete(interaction) {
+    try {
+      assertEditPicksEnabled();
+    } catch {
+      await interaction.respond([]);
+      return;
+    }
     const focused = interaction.options.getFocused(true);
     const adminAll =
       Boolean(interaction.options.getBoolean('all_teams')) &&
@@ -100,6 +115,13 @@ module.exports = {
   },
 
   async execute(interaction) {
+    try {
+      assertEditPicksEnabled();
+    } catch (err) {
+      await interaction.reply({ content: err.message, ephemeral: true });
+      return;
+    }
+
     const slotRaw = interaction.options.getString('slot');
     const fantraxId = interaction.options.getString('player');
     const allTeams = interaction.options.getBoolean('all_teams') || false;

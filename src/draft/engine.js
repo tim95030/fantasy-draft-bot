@@ -567,6 +567,20 @@ class DraftEngine {
     newFantraxId,
     adminOverride = false,
   }) {
+    const config = this.getConfig();
+    if (!config.allowEditPicks && !adminOverride) {
+      throw new Error(
+        'Pick editing is disabled. An admin can enable it with `/draft-setup allow_edit_picks:True`.',
+      );
+    }
+    // Admins using all_teams still respect the global toggle unless we allow admin bypass.
+    // Keep toggle absolute: even admins must enable the feature.
+    if (!config.allowEditPicks) {
+      throw new Error(
+        'Pick editing is disabled. Enable it with `/draft-setup allow_edit_picks:True`.',
+      );
+    }
+
     const state = this.getState();
     if (state.status !== 'running' && state.status !== 'paused' && state.status !== 'ended') {
       throw new Error('No draft picks to edit yet.');
