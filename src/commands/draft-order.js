@@ -28,6 +28,16 @@ function parseTeamsFromCsv(text, guild) {
   if (!rows.length) throw new Error('CSV empty');
 
   const header = rows[0].map((h) => String(h).trim().toLowerCase().replace(/\s+/g, ''));
+  // Common mix-up: uploading preset-picks.csv (round,pick,fantraxId,...) to /draft-order set
+  if (
+    header.includes('round') &&
+    header.includes('pick') &&
+    header.some((h) => h.includes('fantrax'))
+  ) {
+    throw new Error(
+      'That looks like preset-picks.csv (round/pick/fantraxId). For team names + owners use draft-order.csv with columns teamName,ownerDiscordIds.',
+    );
+  }
   const hasHeader = header.some((h) =>
     ['teamname', 'team', 'owners', 'ownerdiscordids', 'discorduserid', 'slot'].includes(h),
   );
