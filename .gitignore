@@ -1,5 +1,7 @@
 node_modules/
 .env
+.env.*
+!.env.example
 .DS_Store
 data/players.csv
 data/draft-order.json
@@ -8,4 +10,6 @@ data/draft-state.json
 data/preset-picks.csv
 *.log
 *.swp
-.env.*
+*.swo
+*~
+.*.sw?
