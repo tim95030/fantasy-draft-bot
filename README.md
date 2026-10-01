@@ -8,6 +8,7 @@ It supports:
 - Starting mid-draft (e.g. round 32+)
 - A pick timer, skipped picks, and catch-up
 - Searching / drafting players with `/draft-player`
+- Per-team pick queues with optional autodraft (`/draft-queue`)
 - Reading picks posted as: `32.5 John Doe LW, ANA`
 
 ---
@@ -34,6 +35,25 @@ Admins can pause the **pick countdown** overnight while still allowing picks:
 ## Command channel lock
 
 Once `/draft-setup channel:#draft` is set, **all draft slash commands** (except `/draft-setup` itself) only work in that channel. Elsewhere you get an ephemeral reminder pointing at the draft channel. Typed pick messages were already limited to that channel.
+
+## Pick queues & autodraft
+
+Any team owner can build a personal **pick queue** (max 25). Queues are **per fantasy team** and only editable by that team's owners.
+
+```text
+/draft-queue add player:mcdavid
+/draft-queue show
+/draft-queue move from:3 to:1
+/draft-queue remove position:2
+/draft-queue clear
+/draft-queue autodraft enabled:True
+```
+
+- If you own more than one team, pass `for_team` (autocomplete).
+- With **autodraft ON**, when your team comes on the clock the bot submits the first **still-available** queued player, posts `Autodrafted …`, and advances. Taken/missing names are dropped from the queue automatically.
+- Autodraft does **not** claim open skips — only the on-clock slot.
+- Autodraft still fires during sleep hours (draft keeps moving for queued teams).
+- Manage replies are ephemeral; successful autodrafts are public in the draft channel.
 
 ## Pick-clock warnings
 
@@ -308,6 +328,7 @@ In Discord:
 | Admin force a pick | `/draft-set-pick` |
 | Export results | `/draft-export` |
 | Search + draft | `/draft-player` |
+| Pick queue / autodraft | `/draft-queue` |
 
 ---
 

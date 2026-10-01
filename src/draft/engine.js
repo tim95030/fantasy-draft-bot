@@ -17,6 +17,7 @@ const { loadState, saveState, resetState } = require('./state');
 const { DraftTimer } = require('./timer');
 const { formatPickLine } = require('./parser');
 const { formatDuration } = require('./formatDuration');
+const playerQueue = require('./playerQueue');
 const {
   isInSleepWindow,
   sleepWindowLabel,
@@ -338,6 +339,11 @@ class DraftEngine {
       return;
     }
 
+    // Autodraft before human timer / sleep pause. submitPick → startClock for next slot.
+    if (this.tryAutoDraftOnce(state, slot)) {
+      return;
+    }
+
     const fullMs = Math.max(1, config.secondsPerPick) * 1000;
     const ms =
       remainingMs != null && remainingMs > 0 ? remainingMs : fullMs;
@@ -368,6 +374,59 @@ class DraftEngine {
           await this.announceWarning(secondsLeft);
         },
       },
+    );
+  }
+
+  /**
+   * If the on-clock team has autodraft enabled, submit the first available
+   * queued player. Returns true when a pick was made (startClock already
+   * re-entered for the following slot via submitPick).
+   */
+  tryAutoDraftOnce(state, slot) {
+    if (!slot || slot.teamIndex == null || slot.teamIndex < 0) return false;
+    if (this.isFilled(state, slot.round, slot.pick)) return false;
+
+    const entry = playerQueue.getEntry(slot.teamIndex);
+    if (!entry.autoDraft) return false;
+
+    const drafterId = String(
+      slot.discordUserId ||
+        (Array.isArray(slot.ownerIds) && slot.ownerIds[0]) ||
+        '',
+    );
+    if (!drafterId) return false;
+
+    while (true) {
+      const fantraxId = playerQueue.shiftNextAvailable(slot.teamIndex, pool);
+      if (!fantraxId) return false;
+
+      try {
+        const result = this.submitPick({
+          discordUserId: drafterId,
+          fantraxId,
+          round: slot.round,
+          pick: slot.pick,
+          source: 'autodraft',
+        });
+        this.announceAutodraft(result).catch((err) =>
+          console.error('announceAutodraft failed:', err),
+        );
+        return true;
+      } catch (err) {
+        console.warn(
+          `Autodraft skipped ${fantraxId} for ${slot.round}.${slot.pick}: ${err.message}`,
+        );
+      }
+    }
+  }
+
+  async announceAutodraft(result) {
+    const channel = await this.getDraftChannel();
+    if (!channel) return;
+    const team =
+      result.pickRecord.teamName || result.pickRecord.displayName || 'team';
+    await channel.send(
+      `Autodrafted **${result.line}** for **${team}** (${mentionOwners(result.pickRecord)}) _(queue)_`,
     );
   }
 
