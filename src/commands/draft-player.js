@@ -2,7 +2,65 @@ const { SlashCommandBuilder } = require('discord.js');
 const { isAdmin } = require('../config');
 const { pool } = require('../draft/players');
 const { engine } = require('../draft/engine');
-const { slotOwnedBy } = require('../draft/order');
+const {
+  loadOrder,
+  normalizeTeam,
+  slotOwnedBy,
+  ownerIds,
+} = require('../draft/order');
+
+function teamMatchesSlot(team, slot) {
+  if (!team || !slot) return false;
+  if (slot.teamName && team.teamName && slot.teamName === team.teamName) return true;
+  const ids = new Set(ownerIds(team).map(String));
+  if (Array.isArray(slot.ownerIds) && slot.ownerIds.some((id) => ids.has(String(id)))) {
+    return true;
+  }
+  return ids.has(String(slot.discordUserId));
+}
+
+function resolveTeamFromOption(value) {
+  const order = loadOrder();
+  const m = String(value || '').match(/^slot:(\d+)$/i);
+  if (m) {
+    const idx = Number(m[1]) - 1;
+    if (idx < 0 || idx >= order.teams.length) return null;
+    return { index: idx, team: normalizeTeam(order.teams[idx], idx) };
+  }
+  // Fallback: match by team name
+  const want = String(value || '')
+    .trim()
+    .toLowerCase();
+  const idx = order.teams.findIndex(
+    (t, i) => normalizeTeam(t, i).teamName.toLowerCase() === want,
+  );
+  if (idx < 0) return null;
+  return { index: idx, team: normalizeTeam(order.teams[idx], idx) };
+}
+
+function searchTeams(query, limit = 25) {
+  const order = loadOrder();
+  const q = String(query || '')
+    .trim()
+    .toLowerCase();
+  const scored = [];
+  order.teams.forEach((raw, i) => {
+    const team = normalizeTeam(raw, i);
+    const name = team.teamName.toLowerCase();
+    let score = 0;
+    if (!q) score = 1;
+    else if (name === q) score = 100;
+    else if (name.startsWith(q)) score = 80;
+    else if (name.includes(q)) score = 50;
+    else if (String(i + 1) === q || `slot ${i + 1}`.includes(q)) score = 40;
+    else return;
+    scored.push({ score, i, team });
+  });
+  scored.sort(
+    (a, b) => b.score - a.score || a.team.teamName.localeCompare(b.team.teamName),
+  );
+  return scored.slice(0, limit);
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -15,10 +73,11 @@ module.exports = {
         .setRequired(true)
         .setAutocomplete(true),
     )
-    .addUserOption((o) =>
+    .addStringOption((o) =>
       o
-        .setName('for_manager')
-        .setDescription('Admin only: submit this pick on behalf of a manager'),
+        .setName('for_team')
+        .setDescription('Admin only: submit for a fantasy team (by name)')
+        .setAutocomplete(true),
     )
     .addBooleanOption((o) =>
       o
@@ -28,21 +87,35 @@ module.exports = {
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
-    if (focused.name !== 'player') return;
-    const results = pool.search(focused.value, { availableOnly: true, limit: 25 });
-    await interaction.respond(
-      results.map((p) => ({
-        name: `${pool.formatLabel(p)}`.slice(0, 100),
-        value: p.fantraxId.slice(0, 100),
-      })),
-    );
+
+    if (focused.name === 'player') {
+      const results = pool.search(focused.value, { availableOnly: true, limit: 25 });
+      await interaction.respond(
+        results.map((p) => ({
+          name: `${pool.formatLabel(p)}`.slice(0, 100),
+          value: p.fantraxId.slice(0, 100),
+        })),
+      );
+      return;
+    }
+
+    if (focused.name === 'for_team') {
+      const results = searchTeams(focused.value, 25);
+      await interaction.respond(
+        results.map(({ i, team }) => ({
+          name: `${team.teamName} (#${i + 1})`.slice(0, 100),
+          value: `slot:${i + 1}`,
+        })),
+      );
+    }
   },
 
   async execute(interaction) {
     const fantraxId = interaction.options.getString('player');
-    const forManager = interaction.options.getUser('for_manager');
+    const forTeamValue = interaction.options.getString('for_team');
     const postOnly = interaction.options.getBoolean('post_only') || false;
     const player = pool.get(fantraxId);
+    const admin = isAdmin(interaction.user.id, interaction.member);
 
     if (!player) {
       await interaction.reply({
@@ -52,38 +125,88 @@ module.exports = {
       return;
     }
 
-    if (forManager && !isAdmin(interaction.user.id, interaction.member)) {
+    if (forTeamValue && !admin) {
       await interaction.reply({
-        content: 'Only admins can draft for another manager.',
+        content: 'Only admins can draft for another team (`for_team`).',
         ephemeral: true,
       });
       return;
     }
 
+    let targetTeam = null;
+    if (forTeamValue) {
+      targetTeam = resolveTeamFromOption(forTeamValue);
+      if (!targetTeam) {
+        await interaction.reply({
+          content: 'Team not found. Use autocomplete to pick a fantasy team.',
+          ephemeral: true,
+        });
+        return;
+      }
+    }
+
     const state = engine.getState();
-    const drafterId = forManager ? forManager.id : interaction.user.id;
     const current = engine.currentSlot(state);
-    const openSkip = engine.openSkipsForUser(state, drafterId)[0];
 
     let round;
     let pick;
-    if (
-      current &&
-      slotOwnedBy(current, drafterId) &&
-      !engine.isFilled(state, current.round, current.pick)
-    ) {
-      round = current.round;
-      pick = current.pick;
-    } else if (openSkip) {
-      round = openSkip.round;
-      pick = openSkip.pick;
-    } else if (current) {
-      round = current.round;
-      pick = current.pick;
+    let drafterId = interaction.user.id;
+    let adminOverride = false;
+
+    if (targetTeam) {
+      adminOverride = true;
+      const owners = ownerIds(targetTeam.team);
+      drafterId = owners[0] || interaction.user.id;
+
+      const teamSkip = state.skipped.find(
+        (s) =>
+          !engine.isFilled(state, s.round, s.pick) && teamMatchesSlot(targetTeam.team, s),
+      );
+
+      if (
+        current &&
+        teamMatchesSlot(targetTeam.team, current) &&
+        !engine.isFilled(state, current.round, current.pick)
+      ) {
+        round = current.round;
+        pick = current.pick;
+      } else if (teamSkip) {
+        round = teamSkip.round;
+        pick = teamSkip.pick;
+      } else if (current) {
+        // Admin force onto the named team's identity for the current clock? No —
+        // require the team to be due or skipped.
+        await interaction.reply({
+          content: `**${targetTeam.team.teamName}** is not on the clock and has no open skipped picks. Use \`/draft-set-pick\` to force a specific round.pick.`,
+          ephemeral: true,
+        });
+        return;
+      } else {
+        const config = engine.getConfig();
+        round = config.startRound;
+        pick = targetTeam.index + 1;
+      }
     } else {
-      const config = engine.getConfig();
-      round = config.startRound;
-      pick = 1;
+      const drafter = interaction.user.id;
+      const openSkip = engine.openSkipsForUser(state, drafter)[0];
+      if (
+        current &&
+        slotOwnedBy(current, drafter) &&
+        !engine.isFilled(state, current.round, current.pick)
+      ) {
+        round = current.round;
+        pick = current.pick;
+      } else if (openSkip) {
+        round = openSkip.round;
+        pick = openSkip.pick;
+      } else if (current) {
+        round = current.round;
+        pick = current.pick;
+      } else {
+        const config = engine.getConfig();
+        round = config.startRound;
+        pick = 1;
+      }
     }
 
     const line = pool.formatPickLine(round, pick, player);
@@ -99,13 +222,14 @@ module.exports = {
         fantraxId,
         round,
         pick,
-        adminOverride:
-          Boolean(forManager) && isAdmin(interaction.user.id, interaction.member),
+        adminOverride,
         source: 'command',
       });
 
+      const teamLabel =
+        result.pickRecord.teamName || result.pickRecord.displayName || 'team';
       await interaction.reply(
-        `Drafted: **${result.line}** → <@${result.pickRecord.discordUserId}>` +
+        `Drafted: **${result.line}** → **${teamLabel}**` +
           (result.pickRecord.catchUp ? ' _(catch-up skip)_' : ''),
       );
 
