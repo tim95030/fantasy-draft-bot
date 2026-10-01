@@ -127,8 +127,28 @@ module.exports = {
         ? `\n• Dropped warnings ≥ new clock: ${droppedWarnings.map((s) => `${s}s`).join(', ')}`
         : '';
 
+    let queueNote = '';
+    const roundsChanged = startRound != null || totalRounds != null;
+    if (roundsChanged) {
+      const state = engine.getState();
+      if (state.status === 'running' || state.status === 'paused') {
+        try {
+          const sync = engine.syncQueueToConfig();
+          queueNote = `\n• Live queue rebuilt: rounds **${sync.startRound}–${sync.endRound}** (${sync.totalRounds} rounds, ${sync.queueLen} picks). Recorded picks kept.`;
+          try {
+            await engine.announceOnClock(engine.getState());
+            queueNote += '\n• Re-posted on-clock notice with updated progress.';
+          } catch (err) {
+            queueNote += `\n• Queue updated but announce failed: ${err.message}`;
+          }
+        } catch (err) {
+          queueNote = `\n• Could not rebuild live queue: ${err.message}`;
+        }
+      }
+    }
+
     let announceNote = '';
-    if (channel) {
+    if (channel && !queueNote) {
       const state = engine.getState();
       if (state.status === 'running' || state.status === 'paused') {
         try {
@@ -145,7 +165,7 @@ module.exports = {
         'Draft config saved:',
         `• Channel: ${config.draftChannelId ? `<#${config.draftChannelId}>` : '_unset_'}`,
         `• Start round: **${config.startRound}**`,
-        `• Total rounds: **${config.totalRounds}**`,
+        `• Total rounds: **${config.totalRounds}** (absolute end round **${config.startRound + config.totalRounds - 1}**)`,
         `• Seconds/pick: **${config.secondsPerPick}** (${require('../draft/formatDuration').formatDuration(config.secondsPerPick)})`,
         `• Pick warnings: **${(config.pickWarningsSec || []).map((s) => `${s}s`).join(', ') || 'none'}**`,
         `• Snake: **${config.snake}**`,
@@ -154,6 +174,7 @@ module.exports = {
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
         warnNote,
+        queueNote,
         announceNote,
       ]
         .filter(Boolean)

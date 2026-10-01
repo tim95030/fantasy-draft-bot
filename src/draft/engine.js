@@ -217,10 +217,15 @@ class DraftEngine {
       timeValue = `⏸ Paused for sleep · ${rem} left · resumes ${wakeLabel}`;
     }
 
+    const startRound = state.queue.length
+      ? state.queue[0].round
+      : config.startRound;
     const endRound =
       state.queue.length > 0
         ? state.queue[state.queue.length - 1].round
         : config.startRound + config.totalRounds - 1;
+    const roundsInDraft = endRound - startRound + 1;
+    const roundInDraft = slot.round - startRound + 1;
     const picksThisRound = state.queue.filter((s) => s.round === slot.round).length;
     const overallPick = state.currentIndex + 1;
     const overallTotal = state.queue.length;
@@ -240,7 +245,7 @@ class DraftEngine {
         {
           name: 'Progress',
           value: [
-            `Round **${slot.round}** of **${endRound}**`,
+            `Round **${slot.round}** (absolute) · **${roundInDraft}** of **${roundsInDraft}** in this draft (ends **${endRound}**)`,
             `Pick **${slot.pick}** of **${picksThisRound}** this round`,
             `Pick **${overallPick}** of **${overallTotal}** overall`,
           ].join('\n'),
@@ -473,6 +478,62 @@ class DraftEngine {
       fantraxId: r[idx.fantraxId],
       drafterDiscordUserId: r[idx.drafterDiscordUserId],
     }));
+  }
+
+  /**
+   * Rebuild the live pick queue from current config (start_round / total_rounds)
+   * without wiping recorded picks. Used when /draft-setup changes mid-draft.
+   */
+  syncQueueToConfig() {
+    const state = this.getState();
+    if (state.status !== 'running' && state.status !== 'paused') {
+      return { changed: false, reason: 'inactive' };
+    }
+
+    const config = this.getConfig();
+    const order = this.getOrder();
+    const err = validateOrder(order, {
+      allowDuplicateOwners: order.allowDuplicateOwners || config.allowDuplicateOwners,
+    });
+    if (err) throw new Error(err);
+
+    const prev = this.currentSlot(state);
+    const newQueue = buildQueue({
+      teams: order.teams,
+      snake: config.snake ?? order.snake,
+      startRound: config.startRound,
+      totalRounds: config.totalRounds,
+    });
+
+    const keySet = new Set(newQueue.map((s) => `${s.round}.${s.pick}`));
+    state.skipped = (state.skipped || []).filter((s) => keySet.has(`${s.round}.${s.pick}`));
+
+    let newIndex = 0;
+    if (prev) {
+      const idx = newQueue.findIndex(
+        (s) => s.round === prev.round && s.pick === prev.pick,
+      );
+      if (idx >= 0) newIndex = idx;
+      else {
+        // Current slot fell outside the new window — land on first open slot
+        newIndex = 0;
+      }
+    }
+
+    state.queue = newQueue;
+    state.currentIndex = newIndex;
+    this.advanceToNextOpen(state);
+    this.persist(state);
+
+    const endRound = newQueue.length ? newQueue[newQueue.length - 1].round : null;
+    return {
+      changed: true,
+      startRound: config.startRound,
+      totalRounds: config.totalRounds,
+      endRound,
+      queueLen: newQueue.length,
+      currentIndex: state.currentIndex,
+    };
   }
 
   startDraft({ announce = true } = {}) {
