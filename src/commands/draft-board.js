@@ -38,6 +38,6 @@ module.exports = {
 
     let body = lines.join('\n');
     if (body.length > 1900) body = `${body.slice(0, 1900)}…`;
-    await interaction.reply({ content: body });
+    await interaction.reply({ content: body, ephemeral: true });
   },
 };
