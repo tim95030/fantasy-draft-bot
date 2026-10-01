@@ -73,7 +73,66 @@ class DraftEngine {
         if (Array.isArray(s.ownerIds) && s.ownerIds.map(String).includes(id)) return true;
         return String(s.discordUserId) === id;
       })
-      .sort((a, b) => a.round - b.round || a.pick - b.pick);
+      .sort((a, b) => this.slotSortKey(a) - this.slotSortKey(b));
+  }
+
+  slotSortKey(slot) {
+    if (slot == null) return Number.POSITIVE_INFINITY;
+    if (Number.isInteger(slot.overallIndex)) return slot.overallIndex;
+    return Number(slot.round) * 1000 + Number(slot.pick);
+  }
+
+  /**
+   * Oldest claimable slot for a Discord user: earliest open skip, else
+   * the on-clock slot if they own it. Skips always beat the active clock.
+   */
+  oldestOpenSlotForUser(state, discordUserId) {
+    const skips = this.openSkipsForUser(state, discordUserId);
+    if (skips.length) return skips[0];
+    const current = this.currentSlot(state);
+    if (
+      current &&
+      slotOwnedBy(current, discordUserId) &&
+      !this.isFilled(state, current.round, current.pick)
+    ) {
+      return current;
+    }
+    return null;
+  }
+
+  /**
+   * Oldest claimable slot for a fantasy team (by name / draft-order index).
+   * Open skips first (earliest), else on-clock if that team is up.
+   */
+  oldestOpenSlotForTeam(state, team, teamIndex = null) {
+    const name = String(team?.teamName || '')
+      .trim()
+      .toLowerCase();
+    const match = (slot) => {
+      if (!slot) return false;
+      if (
+        teamIndex != null &&
+        Number.isInteger(slot.teamIndex) &&
+        Number(slot.teamIndex) === Number(teamIndex)
+      ) {
+        return true;
+      }
+      const slotName = String(slot.teamName || slot.displayName || '')
+        .trim()
+        .toLowerCase();
+      return Boolean(name && slotName && name === slotName);
+    };
+
+    const skips = state.skipped
+      .filter((s) => !this.isFilled(state, s.round, s.pick) && match(s))
+      .sort((a, b) => this.slotSortKey(a) - this.slotSortKey(b));
+    if (skips.length) return skips[0];
+
+    const current = this.currentSlot(state);
+    if (current && match(current) && !this.isFilled(state, current.round, current.pick)) {
+      return current;
+    }
+    return null;
   }
 
   findSkip(state, round, pick) {
@@ -484,18 +543,12 @@ class DraftEngine {
       }
       isCatchUp = Boolean(skippedOwned && !isCurrent);
     } else {
-      // No explicit slot: earliest open skip first, else current turn if owned
-      const skips = this.openSkipsForUser(state, discordUserId);
-      if (skips.length) {
-        const s = skips[0];
-        targetSlot = state.queue.find((q) => q.round === s.round && q.pick === s.pick);
-        isCatchUp = true;
-      } else if (
-        current &&
-        slotOwnedBy(current, discordUserId) &&
-        !this.isFilled(state, current.round, current.pick)
-      ) {
-        targetSlot = current;
+      // No explicit slot: oldest open skip, else on-clock if owned
+      const target = this.oldestOpenSlotForUser(state, discordUserId);
+      if (target) {
+        const skip = this.findSkip(state, target.round, target.pick);
+        targetSlot = state.queue.find((q) => q.round === target.round && q.pick === target.pick);
+        isCatchUp = Boolean(skip);
       } else if (!adminOverride) {
         throw new Error("It is not your team's turn and you have no open skipped picks.");
       } else {

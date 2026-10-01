@@ -5,33 +5,8 @@ const { engine } = require('../draft/engine');
 const {
   loadOrder,
   normalizeTeam,
-  slotOwnedBy,
   ownerIds,
 } = require('../draft/order');
-
-/**
- * Match a fantasy team to a queue/skip slot by team identity — not owner IDs.
- * Owner overlap is wrong when allow_duplicate_owners lets one Discord user
- * own multiple teams (e.g. admin catch-up for Sharks while another owned
- * team is on the clock).
- */
-function teamMatchesSlot(team, slot, teamIndex = null) {
-  if (!team || !slot) return false;
-  if (
-    teamIndex != null &&
-    Number.isInteger(slot.teamIndex) &&
-    Number(slot.teamIndex) === Number(teamIndex)
-  ) {
-    return true;
-  }
-  const teamName = String(team.teamName || '')
-    .trim()
-    .toLowerCase();
-  const slotName = String(slot.teamName || slot.displayName || '')
-    .trim()
-    .toLowerCase();
-  return Boolean(teamName && slotName && teamName === slotName);
-}
 
 function resolveTeamFromOption(value) {
   const order = loadOrder();
@@ -171,51 +146,29 @@ module.exports = {
       adminOverride = true;
       const owners = ownerIds(targetTeam.team);
       drafterId = owners[0] || interaction.user.id;
-      const idx = targetTeam.index;
 
-      const teamSkips = state.skipped
-        .filter(
-          (s) =>
-            !engine.isFilled(state, s.round, s.pick) &&
-            teamMatchesSlot(targetTeam.team, s, idx),
-        )
-        .sort((a, b) => a.round - b.round || a.pick - b.pick);
-      const teamSkip = teamSkips[0];
-
-      const onClockForTeam =
-        current &&
-        teamMatchesSlot(targetTeam.team, current, idx) &&
-        !engine.isFilled(state, current.round, current.pick);
-
-      // Catch-up first: open skips before the on-clock slot for this team.
-      if (teamSkip) {
-        round = teamSkip.round;
-        pick = teamSkip.pick;
-      } else if (onClockForTeam) {
-        round = current.round;
-        pick = current.pick;
-      } else {
+      const target = engine.oldestOpenSlotForTeam(
+        state,
+        targetTeam.team,
+        targetTeam.index,
+      );
+      if (!target) {
         await interaction.reply({
           content: `**${targetTeam.team.teamName}** is not on the clock and has no open skipped picks. Use \`/draft-set-pick\` to force a specific round.pick.`,
           ephemeral: true,
         });
         return;
       }
+      round = target.round;
+      pick = target.pick;
     } else {
       const drafter = interaction.user.id;
-      const openSkip = engine.openSkipsForUser(state, drafter)[0];
-      // Catch-up first: fill open skips before the on-clock slot.
-      if (openSkip) {
-        round = openSkip.round;
-        pick = openSkip.pick;
-      } else if (
-        current &&
-        slotOwnedBy(current, drafter) &&
-        !engine.isFilled(state, current.round, current.pick)
-      ) {
-        round = current.round;
-        pick = current.pick;
+      const target = engine.oldestOpenSlotForUser(state, drafter);
+      if (target) {
+        round = target.round;
+        pick = target.pick;
       } else if (current) {
+        // Not their turn / no skip — still format against the clock for post_only / error hint
         round = current.round;
         pick = current.pick;
       } else {
