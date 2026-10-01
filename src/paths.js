@@ -16,4 +16,5 @@ module.exports = {
   STATE_JSON: path.join(DATA, 'draft-state.json'),
   PRESET_CSV: path.join(DATA, 'preset-picks.csv'),
   PRESET_SAMPLE: path.join(DATA, 'preset-picks.sample.csv'),
+  PLAYER_QUEUES_JSON: path.join(DATA, 'player-queues.json'),
 };
