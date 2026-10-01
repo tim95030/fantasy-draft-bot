@@ -16,14 +16,12 @@ module.exports = {
     await interaction.deferReply();
     try {
       const { slot, state } = engine.forceSkip();
-      const next = engine.currentSlot(state);
       await interaction.editReply(
-        `Skipped **${slot.round}.${slot.pick}** <@${slot.discordUserId}>.` +
-          (next
-            ? ` Now on the clock: **${next.round}.${next.pick}** <@${next.discordUserId}>`
-            : ' Draft queue finished.'),
+        `Skipped **${slot.round}.${slot.pick}** <@${slot.discordUserId}>.`,
       );
-      if (state.status === 'running' && next) await engine.announceOnClock(state);
+      if (state.status === 'running') {
+        await engine.proceedToNextPick();
+      }
     } catch (err) {
       await interaction.editReply(err.message);
     }
