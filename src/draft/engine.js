@@ -217,15 +217,10 @@ class DraftEngine {
       timeValue = `⏸ Paused for sleep · ${rem} left · resumes ${wakeLabel}`;
     }
 
-    const startRound = state.queue.length
-      ? state.queue[0].round
-      : config.startRound;
     const endRound =
       state.queue.length > 0
         ? state.queue[state.queue.length - 1].round
         : config.startRound + config.totalRounds - 1;
-    const roundsInDraft = endRound - startRound + 1;
-    const roundInDraft = slot.round - startRound + 1;
     const picksThisRound = state.queue.filter((s) => s.round === slot.round).length;
     const overallPick = state.currentIndex + 1;
     const overallTotal = state.queue.length;
@@ -245,7 +240,7 @@ class DraftEngine {
         {
           name: 'Progress',
           value: [
-            `Round **${slot.round}** (absolute) · **${roundInDraft}** of **${roundsInDraft}** in this draft (ends **${endRound}**)`,
+            `Round **${slot.round}** of **${endRound}**`,
             `Pick **${slot.pick}** of **${picksThisRound}** this round`,
             `Pick **${overallPick}** of **${overallTotal}** overall`,
           ].join('\n'),
