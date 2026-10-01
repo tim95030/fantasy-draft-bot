@@ -1,57 +1,258 @@
 # Fantasy Draft Bot
 
-Local Discord bot for running an **ongoing fantasy draft** (designed for ~32 teams and ~7,000 players with Fantrax IDs). Supports snake or linear order, pick clocks, skipped-pick catch-up, CSV player pools, and mid-draft start rounds.
+A Discord bot that runs a **fantasy sports draft** in a text channel. Built for leagues with about **32 teams** and a large player pool (~**7,000** players with Fantrax IDs).
 
-> **Local only.** Do **not** add a git remote or publish this repo. Keep tokens and league data on your machine.
+It supports:
 
-## Features
+- Snake or linear draft order
+- Starting mid-draft (e.g. round 32+)
+- A pick timer, skipped picks, and catch-up
+- Searching / drafting players with `/draft-player`
+- Reading picks posted as: `32.5 John Doe LW, ANA`
 
-- Draft order for **32 managers** (Discord users), with optional **snake**
-- Configurable **start round** and **total rounds remaining** (e.g. start at round 32)
-- Eligible player pool via CSV (`fantraxId`, name, position, NHL team, taken)
-- Preset picks CSV to mark history before you resume
-- Auto-advance when someone posts: `32.5 John Doe LW, ANA`
-- Skipped picks stay claimable out of order by the owning manager
-- `/draft-player` searchable autocomplete (Fantrax ID under the hood)
-- Admin tools: setup, import, set-pick, skip, undo, export
+---
 
-## Requirements
+## Absolute beginner guide: run this from scratch
 
-- Node.js 18+
-- A Discord application/bot with:
-  - **Message Content Intent** enabled
-  - **Server Members Intent** enabled (recommended)
-  - Invited with `applications.commands` + `bot` scopes  
-    Permissions: Send Messages, Embed Links, Attach Files, Read Message History, Use Slash Commands
+Follow these sections **in order**. You only need to do the Discord Developer Portal steps once.
 
-## Quick start
+### 0) What you need on your computer
+
+1. **Node.js 18 or newer**
+   - Check: open Terminal and run:
+     ```bash
+     node -v
+     ```
+   - If that fails or shows a version below 18, install from [https://nodejs.org](https://nodejs.org) (LTS is fine).
+2. This project on your machine:
+   ```bash
+   cd ~/Code
+   git clone https://github.com/tim95030/fantasy-draft-bot.git
+   cd fantasy-draft-bot
+   npm install
+   ```
+   If you already have the folder, just `cd` into it and run `npm install`.
+
+### 1) Create a Discord application + bot (get your token)
+
+1. Open the Discord Developer Portal: [https://discord.com/developers/applications](https://discord.com/developers/applications)
+2. Log in with the **same Discord account** you use in your league server.
+3. Click **New Application**.
+4. Name it something like `Fantasy Draft Bot` → **Create**.
+5. In the left sidebar, click **Bot**.
+6. Click **Add Bot** / **Reset Token** if needed, then **Yes, do it!**
+7. Under **Token**, click **Reset Token** (or **Copy**) and copy the token.
+   - This is your **`DISCORD_TOKEN`**.
+   - Treat it like a password. **Never commit it to git or paste it in Discord chat.**
+   - If it ever leaks, click **Reset Token** again and update your `.env`.
+8. On the same **Bot** page, scroll to **Privileged Gateway Intents** and turn **ON**:
+   - **MESSAGE CONTENT INTENT** (required — without this, pick messages are ignored)
+   - **SERVER MEMBERS INTENT** (recommended — helps with display names / mentions)
+9. Click **Save Changes**.
+
+### 2) Copy your Application (Client) ID
+
+1. In the left sidebar, click **General Information** (sometimes labeled **OAuth2** → overview).
+2. Find **Application ID** and click **Copy**.
+   - This is your **`CLIENT_ID`**.
+   - It is **not** the same as the bot token.
+
+### 3) (Recommended) Copy your Discord Server ID
+
+This makes slash commands appear **immediately** in your league server.
+
+1. In the Discord desktop/web app: **User Settings → Advanced → Developer Mode → ON**
+2. Right-click your **server name** (in the server list) → **Copy Server ID**
+   - This is your **`GUILD_ID`**.
+
+### 4) Invite the bot to your server
+
+1. In the Developer Portal, open your app → left sidebar **OAuth2** → **URL Generator**.
+2. Under **Scopes**, check:
+   - `bot`
+   - `applications.commands`
+3. Under **Bot Permissions**, check at least:
+   - Read Messages/View Channels
+   - Send Messages
+   - Embed Links
+   - Attach Files
+   - Read Message History
+   - Use Slash Commands  
+   (Or temporarily use **Administrator** for testing, then tighten later.)
+4. Copy the **Generated URL** at the bottom, open it in your browser, pick your server, and **Authorize**.
+5. Confirm the bot appears offline/online in your member list (it will go online after `npm start`).
+
+### 5) Create your secret `.env` file
+
+In the project folder:
 
 ```bash
 cd ~/Code/fantasy-draft-bot
 cp .env.example .env
-# Edit .env: DISCORD_TOKEN, CLIENT_ID, optional GUILD_ID
+```
 
+Open `.env` in any text editor and fill it in:
+
+```env
+DISCORD_TOKEN=paste_the_bot_token_here
+CLIENT_ID=paste_the_application_id_here
+GUILD_ID=paste_your_server_id_here
+```
+
+Example shape (fake placeholders only — yours will look different):
+
+```env
+DISCORD_TOKEN=REPLACE_WITH_BOT_TOKEN_FROM_DEVELOPER_PORTAL
+CLIENT_ID=123456789012345678
+GUILD_ID=987654321098765432
+```
+
+Notes:
+
+- No quotes around the values
+- No spaces around `=`
+- `.env` is gitignored so it will not be uploaded to GitHub
+
+### 6) Copy starter data files
+
+```bash
 cp data/config.sample.json data/config.json
 cp data/draft-order.sample.json data/draft-order.json
 cp data/players.sample.csv data/players.csv
-# Replace players.csv with your ~7k Fantrax export (see format below)
+```
 
-npm install
-npm run register-commands   # prefer GUILD_ID in .env for instant command registration
+Later you will replace `players.csv` with your real Fantrax export (see [Player CSV format](#playerscsv)).
+
+### 7) Register slash commands
+
+With the bot **not required to be running** yet:
+
+```bash
+npm run register-commands
+```
+
+You should see something like: `Registered 16 guild commands to ...`
+
+If you skipped `GUILD_ID`, commands are registered **globally** and can take up to ~1 hour to show up. Prefer setting `GUILD_ID`.
+
+### 8) Start the bot
+
+```bash
 npm start
 ```
 
-## Environment
+Success looks like:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DISCORD_TOKEN` | yes | Bot token |
-| `CLIENT_ID` | yes | Application client ID (for command registration) |
-| `GUILD_ID` | no | If set, registers slash commands to one server immediately |
+```text
+Loaded 6 players (4 available).
+Logged in as YourBotName#1234
+```
+
+Leave this Terminal window open while the draft is running. Stopping the process (`Ctrl+C`) stops the bot.
+
+### 9) First-time setup inside Discord
+
+Do this in the channel where the draft will happen (you need **Manage Server** or to be listed as an admin later).
+
+1. **Configure the draft**
+   ```text
+   /draft-setup channel:#your-draft-channel start_round:32 total_rounds:10 seconds_per_pick:120 snake:True
+   ```
+   This also adds **you** as a draft admin.
+
+2. **Set the 32-team draft order** (first-round order, Discord users in pick order):
+   ```text
+   /draft-order set users:@Manager1 @Manager2 ... @Manager32 snake:True
+   ```
+   Or attach a CSV with columns `discordUserId,displayName` via the `csv` option.
+
+   Tip: with Developer Mode on, right-click a user → **Copy User ID** for CSV rows.
+
+3. **Import players**
+   ```text
+   /draft-import-players csv:your-players.csv
+   ```
+   Mark already-drafted players with `taken=true` in the CSV (or import presets — see below).
+
+4. **Optional: import earlier picks** so the board has history:
+   ```text
+   /draft-import-presets csv:preset-picks.csv
+   ```
+
+5. **Start**
+   ```text
+   /draft-start
+   ```
+
+The bot will ping whoever is on the clock.
+
+### 10) How managers make picks
+
+**Option A — type in the draft channel:**
+
+```text
+32.5 John Doe LW, ANA
+```
+
+Meaning: round **32**, pick **5**, player **John Doe**, position **LW**, NHL team **ANA**.  
+That player is added to the **person who posted**’s roster (or their skipped slot if catching up).
+
+**Option B — slash command with search:**
+
+```text
+/draft-player player:doe
+```
+
+Type at least 2 characters, pick from the list (`Name — POS, TEAM`), and the bot submits when it’s your turn (or for an open skip you own).
+
+Useful extras:
+
+- `/draft-status` — who’s up, timer, open skips
+- `/draft-board` — recent picks
+- `/draft-pool search query:mcdavid` — check availability
+
+---
+
+## Day-to-day cheat sheet
+
+```bash
+cd ~/Code/fantasy-draft-bot
+npm start                 # run the bot (leave this running)
+# In another terminal, only when commands changed or first setup:
+npm run register-commands
+```
+
+In Discord:
+
+| Goal | Command |
+|------|---------|
+| Configure channel / rounds / timer / admins | `/draft-setup` |
+| Show order | `/draft-order show` |
+| Set 32-man order | `/draft-order set` |
+| Load player pool | `/draft-import-players` |
+| Start draft | `/draft-start` |
+| Pause / resume | `/draft-pause` `/draft-resume` |
+| Skip current pick | `/draft-skip` |
+| Undo last pick | `/draft-undo` |
+| Admin force a pick | `/draft-set-pick` |
+| Export results | `/draft-export` |
+| Search + draft | `/draft-player` |
+
+---
+
+## Environment variables
+
+| Variable | Required | Where it comes from |
+|----------|----------|---------------------|
+| `DISCORD_TOKEN` | yes | Developer Portal → Bot → Token |
+| `CLIENT_ID` | yes | Developer Portal → Application ID |
+| `GUILD_ID` | strongly recommended | Right-click server → Copy Server ID |
+
+---
 
 ## Data files
 
-Live files under `data/` (except samples) are **gitignored**.
+Live files under `data/` (except `*.sample.*`) are **gitignored** so secrets/league data stay local.
 
 ### `players.csv`
 
@@ -61,71 +262,69 @@ FX001,Connor McDavid,C,EDM,true
 FX003,John Doe,LW,ANA,false
 ```
 
-- `fantraxId` — unique key (used by autocomplete)
-- `name`, `position`, `team` — real-world identity (team is NHL/club, **not** fantasy team)
-- `taken` — `true` if already drafted before this bot session
+| Column | Meaning |
+|--------|---------|
+| `fantraxId` | Unique ID (autocomplete uses this) |
+| `name` | Player name |
+| `position` | e.g. `C`, `LW`, `D`, `G` |
+| `team` | Real NHL/club abbreviation (for identity), **not** the fantasy team |
+| `taken` | `true` if already drafted before you start the bot |
 
-Upload anytime with `/draft-import-players`.
+Upload with `/draft-import-players`.
 
 ### `draft-order.json`
 
-Exactly **32** entries:
+Exactly **32** managers:
 
 ```json
 {
   "snake": true,
   "teams": [
-    { "discordUserId": "123…", "displayName": "Alice" }
+    { "discordUserId": "123456789012345678", "displayName": "Alice" }
   ]
 }
 ```
 
-Set via `/draft-order set` (32 mentions/IDs) or CSV attachment (`discordUserId,displayName`).
-
 ### `config.json`
 
-Managed mainly by `/draft-setup`:
+Usually edited via `/draft-setup`:
 
-- `adminUserIds` — who can run admin commands (also anyone with Manage Server)
-- `draftChannelId` — only this channel accepts pick messages
-- `startRound` / `totalRounds` / `secondsPerPick` / `snake`
+- `adminUserIds` — draft admins (Manage Server also counts)
+- `draftChannelId` — only this channel accepts typed picks
+- `startRound`, `totalRounds`, `secondsPerPick`, `snake`
 
 ### `preset-picks.csv` (optional)
 
-Applied on `/draft-start`:
+Applied when you run `/draft-start`:
 
 ```csv
 round,pick,fantraxId,drafterDiscordUserId
-1,1,FX001,111111111111111111
+1,1,FX001,123456789012345678
 ```
-
-Upload with `/draft-import-presets`.
 
 ### `draft-state.json`
 
-Runtime state (clock, picks, skips). Created automatically. Safe to delete only when you want a hard reset (then `/draft-start` again).
+Created automatically (clock, picks, skips). Delete only if you want a hard reset, then `/draft-start` again.
 
-## Pick format
+---
+
+## Pick format and skip rules
 
 ```text
 {round}.{pick} {Player Name} {POS}, {TEAM}
 ```
 
-Example:
+Example: `32.5 John Doe LW, ANA`
 
-```text
-32.5 John Doe LW, ANA
-```
+1. It must be your turn **or** you must own that slot as an open **skip**
+2. Player must match the pool (name + POS + team) and not be taken
+3. If the name is ambiguous, the bot lists candidates (with Fantrax IDs)
 
-That means: round 32, pick 5 in that round → draft **John Doe** (LW on ANA) to the **posting manager’s** roster (or the slot owner when catching up / admin override).
+When the timer expires, the pick is **skipped** (not voided). That manager can later post their `Rd.pick …` line to catch up without stopping the current clock.
 
-Rules:
+---
 
-1. Must be your turn **or** an open **skipped** slot you own (use that slot’s `Rd.pick`)
-2. Player must exist (name + POS + team) and not be taken
-3. Ambiguous names get a “did you mean” list with Fantrax IDs
-
-## Commands
+## Commands reference
 
 ### Admin
 
@@ -156,39 +355,46 @@ Rules:
 
 - Type **≥2 characters**; results show `Name — POS, TEAM`
 - Admins can use `for_manager` to submit for someone else
-- `post_only: true` posts the formatted line without submitting
+- `post_only: true` only posts the formatted line
 
-## Draft flow (recommended)
-
-1. Invite the bot; run `/draft-setup` in the draft channel (sets you as admin)
-2. `/draft-order set` with all 32 managers in first-round order
-3. `/draft-import-players` with full Fantrax CSV (`taken=true` for already picked)
-4. Optional: `/draft-import-presets` for board history
-5. `/draft-start` — bot announces who’s on the clock
-6. Managers either:
-   - Post `32.5 John Doe LW, ANA`, or
-   - Use `/draft-player` and select from autocomplete
-7. On timeout the pick is **skipped**; that manager can later post their `Rd.pick …` to catch up without blocking the current clock
-8. `/draft-export` when done
+---
 
 ## Snake ordering
 
 With `snake: true` and `startRound: 32`:
 
-- Round 32: teams 1→32  
-- Round 33: teams 32→1  
-- Round 34: teams 1→32  
+- Round 32: teams 1→32
+- Round 33: teams 32→1
+- Round 34: teams 1→32
 - …
 
-`pick` in `Rd.pick` is the **slot within that round’s order** (1–32), not overall pick number.
+`pick` in `Rd.pick` is the slot **within that round** (1–32), not the overall pick number across all rounds.
+
+---
 
 ## Troubleshooting
 
-- **Slash commands missing** — set `GUILD_ID` and re-run `npm run register-commands`
-- **Picks ignored** — confirm Message Content Intent, correct draft channel, draft status is `running`
-- **Player not found** — POS/TEAM must match CSV; use `/draft-pool search`
-- **Cannot fill slot** — not your turn and no open skip for that `Rd.pick`
+| Problem | Fix |
+|---------|-----|
+| `Missing DISCORD_TOKEN` | Create `.env` from `.env.example` and paste the bot token |
+| Bot online but slash commands missing | Set `GUILD_ID`, run `npm run register-commands`, wait a minute, restart Discord client |
+| Typed picks ignored | Enable **Message Content Intent**, confirm `/draft-setup` channel, ensure `/draft-start` was run |
+| `Used disallowed intents` | Turn on the privileged intents on the Bot page and save |
+| Bot won’t join / can’t see channels | Re-invite with `bot` + `applications.commands` and Send Messages permission |
+| Player not found | POS/TEAM must match CSV; try `/draft-pool search` |
+| Cannot fill slot | Not your turn and no open skip for that `Rd.pick` |
+| Token leaked | Developer Portal → Bot → **Reset Token**, update `.env` |
+
+---
+
+## Security reminders
+
+- Never commit `.env`, tokens, or your real `players.csv` / draft state
+- Don’t share your bot token in screenshots or chat
+- Prefer a private GitHub repo if you fork with league data (this public repo should only have samples)
+
+---
 
 ## License
 
-Private / local use. Not published.
+Use freely for your league. Keep secrets out of git.
