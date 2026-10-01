@@ -16,13 +16,19 @@ function resolveTeamFromOption(value) {
     if (idx < 0 || idx >= order.teams.length) return null;
     return { index: idx, team: normalizeTeam(order.teams[idx], idx) };
   }
-  // Fallback: match by team name
+  // Fallback: match by team name (exact, then unique substring)
   const want = String(value || '')
     .trim()
     .toLowerCase();
-  const idx = order.teams.findIndex(
+  let idx = order.teams.findIndex(
     (t, i) => normalizeTeam(t, i).teamName.toLowerCase() === want,
   );
+  if (idx < 0 && want) {
+    const hits = order.teams
+      .map((t, i) => ({ i, name: normalizeTeam(t, i).teamName.toLowerCase() }))
+      .filter(({ name }) => name.includes(want) || want.includes(name));
+    if (hits.length === 1) idx = hits[0].i;
+  }
   if (idx < 0) return null;
   return { index: idx, team: normalizeTeam(order.teams[idx], idx) };
 }
@@ -135,6 +141,7 @@ module.exports = {
     }
 
     const state = engine.getState();
+    engine.syncTeamsFromOrder(state);
     const current = engine.currentSlot(state);
 
     let round;

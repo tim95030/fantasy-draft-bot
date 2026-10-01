@@ -162,6 +162,20 @@ function resizeTeams(order, count) {
 }
 
 /**
+ * Draft-order index (0-based) for a given round.pick in a snake/linear queue.
+ */
+function teamIndexForPick({ teamCount, snake, startRound, round, pick }) {
+  const n = Number(teamCount);
+  const r = Number(round) - Number(startRound);
+  const i = Number(pick) - 1;
+  if (!Number.isInteger(n) || n < 1) return null;
+  if (!Number.isInteger(r) || r < 0) return null;
+  if (!Number.isInteger(i) || i < 0 || i >= n) return null;
+  const reverse = Boolean(snake) && r % 2 === 1;
+  return reverse ? n - 1 - i : i;
+}
+
+/**
  * Build the full pick queue for the active draft window.
  */
 function buildQueue({ teams, snake, startRound, totalRounds }) {
@@ -190,6 +204,53 @@ function buildQueue({ teams, snake, startRound, totalRounds }) {
     }
   }
   return queue;
+}
+
+/**
+ * Stamp live order team name/owners onto a queue, skip, or pick record.
+ * Returns true if any field changed.
+ */
+function applyLiveTeam(slot, order, { snake, startRound } = {}) {
+  if (!slot || !order?.teams?.length) return false;
+  let idx = Number.isInteger(slot.teamIndex) ? slot.teamIndex : null;
+  if (idx == null || idx < 0 || idx >= order.teams.length) {
+    idx = teamIndexForPick({
+      teamCount: order.teams.length,
+      snake: snake ?? order.snake,
+      startRound: startRound ?? 1,
+      round: slot.round,
+      pick: slot.pick,
+    });
+  }
+  if (idx == null || idx < 0 || idx >= order.teams.length) return false;
+
+  const team = normalizeTeam(order.teams[idx], idx);
+  const ids = ownerIds(team);
+  let changed = false;
+  if (slot.teamIndex !== idx) {
+    slot.teamIndex = idx;
+    changed = true;
+  }
+  if (slot.teamName !== team.teamName) {
+    slot.teamName = team.teamName;
+    changed = true;
+  }
+  if (slot.displayName !== team.teamName) {
+    slot.displayName = team.teamName;
+    changed = true;
+  }
+  const prevIds = Array.isArray(slot.ownerIds) ? slot.ownerIds.map(String).join(',') : '';
+  const nextIds = ids.map(String).join(',');
+  if (prevIds !== nextIds) {
+    slot.ownerIds = ids;
+    changed = true;
+  }
+  const primary = ids[0] || '';
+  if (String(slot.discordUserId || '') !== primary) {
+    slot.discordUserId = primary;
+    changed = true;
+  }
+  return changed;
 }
 
 function slotOwnedBy(slot, discordUserId) {
@@ -236,6 +297,8 @@ module.exports = {
   saveOrder,
   validateOrder,
   buildQueue,
+  teamIndexForPick,
+  applyLiveTeam,
   findTeam,
   findTeamsForUser,
   findTeamByName,

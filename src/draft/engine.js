@@ -11,6 +11,7 @@ const {
   findTeam,
   slotOwnedBy,
   mentionOwners,
+  applyLiveTeam,
 } = require('./order');
 const { loadState, saveState, resetState } = require('./state');
 const { DraftTimer } = require('./timer');
@@ -45,6 +46,38 @@ class DraftEngine {
 
   getState() {
     return loadState();
+  }
+
+  /**
+   * Re-apply live draft-order team names/owners onto the running queue,
+   * skips, and picks. Fixes renames (Sharks → San Jose Sharks) mid-draft.
+   */
+  syncTeamsFromOrder(state = this.getState()) {
+    if (
+      state.status !== 'running' &&
+      state.status !== 'paused' &&
+      state.status !== 'ended'
+    ) {
+      return false;
+    }
+    const order = this.getOrder();
+    const config = this.getConfig();
+    const opts = {
+      snake: config.snake ?? order.snake,
+      startRound: config.startRound,
+    };
+    let changed = false;
+    for (const slot of state.queue || []) {
+      if (applyLiveTeam(slot, order, opts)) changed = true;
+    }
+    for (const slot of state.skipped || []) {
+      if (applyLiveTeam(slot, order, opts)) changed = true;
+    }
+    for (const pick of state.picks || []) {
+      if (applyLiveTeam(pick, order, opts)) changed = true;
+    }
+    if (changed) this.persist(state);
+    return changed;
   }
 
   persist(state) {
@@ -224,6 +257,7 @@ class DraftEngine {
   }
 
   async announceOnClock(state = this.getState()) {
+    this.syncTeamsFromOrder(state);
     const slot = this.currentSlot(state);
     const channel = await this.getDraftChannel();
     if (!slot || !channel) return;
@@ -711,6 +745,7 @@ class DraftEngine {
 
   statusSummary() {
     const state = this.getState();
+    this.syncTeamsFromOrder(state);
     const config = this.getConfig();
     const slot = this.currentSlot(state);
     const sleeping = Boolean(state.sleepPaused) || isInSleepWindow(config);

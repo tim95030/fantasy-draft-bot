@@ -39,6 +39,7 @@ module.exports = {
     const manager = interaction.options.getUser('manager');
     const limit = interaction.options.getInteger('limit') || 20;
     const state = engine.getState();
+    engine.syncTeamsFromOrder(state);
     let picks = [...state.picks];
     if (manager) {
       const id = String(manager.id);

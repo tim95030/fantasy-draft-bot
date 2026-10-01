@@ -265,6 +265,7 @@ module.exports = {
         return;
       }
       saveOrder(next);
+      engine.syncTeamsFromOrder();
       await interaction.reply({
         content: `Updated slot **${slot}**: ${formatTeamLine(teams[slot - 1], slot - 1)}`,
         ephemeral: true,
@@ -312,6 +313,7 @@ module.exports = {
       return;
     }
     saveOrder(next);
+    engine.syncTeamsFromOrder();
     await interaction.editReply(
       `Draft order saved: **${teams.length}** teams, snake=${next.snake}, allow_duplicate_owners=${next.allowDuplicateOwners}.`,
     );
