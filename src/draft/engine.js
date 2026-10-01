@@ -217,6 +217,14 @@ class DraftEngine {
       timeValue = `⏸ Paused for sleep · ${rem} left · resumes ${wakeLabel}`;
     }
 
+    const endRound =
+      state.queue.length > 0
+        ? state.queue[state.queue.length - 1].round
+        : config.startRound + config.totalRounds - 1;
+    const picksThisRound = state.queue.filter((s) => s.round === slot.round).length;
+    const overallPick = state.currentIndex + 1;
+    const overallTotal = state.queue.length;
+
     const embed = new EmbedBuilder()
       .setTitle(sleeping ? 'On the clock (sleep hours)' : 'On the clock')
       .setColor(sleeping ? 0x6e7681 : 0x1f6feb)
@@ -231,8 +239,12 @@ class DraftEngine {
         },
         {
           name: 'Progress',
-          value: `${state.currentIndex + 1} / ${state.queue.length}`,
-          inline: true,
+          value: [
+            `Round **${slot.round}** of **${endRound}**`,
+            `Pick **${slot.pick}** of **${picksThisRound}** this round`,
+            `Pick **${overallPick}** of **${overallTotal}** overall`,
+          ].join('\n'),
+          inline: false,
         },
         {
           name: 'Open skips',
