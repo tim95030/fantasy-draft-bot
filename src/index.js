@@ -7,8 +7,11 @@ const { pool } = require('./draft/players');
 const { ensureOrderFile } = require('./draft/order');
 const { engine } = require('./draft/engine');
 const paths = require('./paths');
+const { version } = require('../package.json');
 
 async function main() {
+  console.log(`fantasy-draft-bot v${version} starting`);
+
   if (!process.env.DISCORD_TOKEN) {
     console.error('Missing DISCORD_TOKEN in .env');
     process.exit(1);
