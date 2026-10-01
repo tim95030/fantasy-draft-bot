@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { engine } = require('../draft/engine');
 const { mentionOwners } = require('../draft/order');
+const { formatDuration } = require('../draft/formatDuration');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -23,7 +24,7 @@ module.exports = {
         },
         {
           name: 'Time left',
-          value: secondsLeft != null ? `${secondsLeft}s` : '—',
+          value: secondsLeft != null ? formatDuration(secondsLeft) : '—',
           inline: true,
         },
         {
