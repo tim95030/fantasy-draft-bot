@@ -1,0 +1,9 @@
+{
+  "adminUserIds": [],
+  "guildId": "",
+  "draftChannelId": "",
+  "startRound": 32,
+  "totalRounds": 10,
+  "secondsPerPick": 120,
+  "snake": true
+}
