@@ -1,0 +1,19 @@
+[Unit]
+Description=Fantasy Draft Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_USER
+WorkingDirectory=REPLACE_HOME/fantasy-draft-bot
+Environment=NODE_ENV=production
+# Loads DISCORD_TOKEN / CLIENT_ID / GUILD_ID from .env via dotenv in the app
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+# Soft limits suitable for Always Free micro shapes
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

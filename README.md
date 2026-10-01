@@ -12,6 +12,10 @@ It supports:
 
 ---
 
+## Running on Oracle Cloud (recommended if your home PC blocks Discord)
+
+See **[deploy/ORACLE.md](deploy/ORACLE.md)** for Always Free VM setup: create instance, install Node, systemd, and upload player CSV.
+
 ## Absolute beginner guide: run this from scratch
 
 Follow these sections **in order**. You only need to do the Discord Developer Portal steps once.
