@@ -77,7 +77,7 @@ module.exports = {
     if (allowDup != null) partial.allowDuplicateOwners = allowDup;
     if (allowEditPicks != null) partial.allowEditPicks = allowEditPicks;
 
-    const { loadConfig } = require('../config');
+    const { loadConfig, normalizePickWarnings } = require('../config');
     const { loadOrder, saveOrder, resizeTeams } = require('../draft/order');
     const { engine } = require('../draft/engine');
     const current = loadConfig();
@@ -93,6 +93,13 @@ module.exports = {
       adminUserIds = adminUserIds.filter((id) => id !== String(removeAdmin.id));
     }
     partial.adminUserIds = adminUserIds;
+
+    const nextClock = seconds != null ? seconds : current.secondsPerPick;
+    const prunedWarnings = normalizePickWarnings(current.pickWarningsSec || [], nextClock);
+    partial.pickWarningsSec = prunedWarnings;
+    const droppedWarnings = (current.pickWarningsSec || []).filter(
+      (s) => !prunedWarnings.includes(s),
+    );
 
     let sizeNote = '';
     if (teamCount != null) {
@@ -115,6 +122,10 @@ module.exports = {
     }
 
     const config = updateConfig(partial);
+    const warnNote =
+      droppedWarnings.length > 0
+        ? `\n• Dropped warnings ≥ new clock: ${droppedWarnings.map((s) => `${s}s`).join(', ')}`
+        : '';
     await interaction.reply({
       content: [
         'Draft config saved:',
@@ -122,11 +133,13 @@ module.exports = {
         `• Start round: **${config.startRound}**`,
         `• Total rounds: **${config.totalRounds}**`,
         `• Seconds/pick: **${config.secondsPerPick}** (${require('../draft/formatDuration').formatDuration(config.secondsPerPick)})`,
+        `• Pick warnings: **${(config.pickWarningsSec || []).map((s) => `${s}s`).join(', ') || 'none'}**`,
         `• Snake: **${config.snake}**`,
         `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
         `• Allow edit picks: **${config.allowEditPicks}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
+        warnNote,
       ]
         .filter(Boolean)
         .join('\n'),

@@ -5,6 +5,7 @@
   "startRound": 32,
   "totalRounds": 10,
   "secondsPerPick": 120,
+  "pickWarningsSec": [60, 30],
   "snake": true,
   "allowDuplicateOwners": false,
   "allowEditPicks": true,

@@ -8,6 +8,8 @@ const DEFAULTS = {
   startRound: 32,
   totalRounds: 10,
   secondsPerPick: 120,
+  /** Seconds remaining when to re-announce who's up (each must be < secondsPerPick). */
+  pickWarningsSec: [],
   snake: true,
   allowDuplicateOwners: false,
   allowEditPicks: true,
@@ -29,7 +31,27 @@ function ensureConfigFile() {
 function loadConfig() {
   ensureConfigFile();
   const raw = JSON.parse(fs.readFileSync(paths.CONFIG_JSON, 'utf8'));
-  return { ...DEFAULTS, ...raw, adminUserIds: [...(raw.adminUserIds || [])] };
+  const merged = { ...DEFAULTS, ...raw, adminUserIds: [...(raw.adminUserIds || [])] };
+  merged.pickWarningsSec = normalizePickWarnings(
+    merged.pickWarningsSec,
+    merged.secondsPerPick,
+  );
+  return merged;
+}
+
+/**
+ * Keep unique positive int warning thresholds strictly below the pick clock.
+ * Sorted descending (60, 30, 10) for display.
+ */
+function normalizePickWarnings(raw, secondsPerPick) {
+  const limit = Math.max(1, Number(secondsPerPick) || 1);
+  const set = new Set();
+  for (const v of Array.isArray(raw) ? raw : []) {
+    const n = Math.floor(Number(v));
+    if (!Number.isInteger(n) || n < 1 || n >= limit) continue;
+    set.add(n);
+  }
+  return [...set].sort((a, b) => b - a);
 }
 
 function saveConfig(config) {
@@ -56,4 +78,5 @@ module.exports = {
   updateConfig,
   isAdmin,
   ensureConfigFile,
+  normalizePickWarnings,
 };

@@ -31,6 +31,20 @@ Admins can pause the **pick countdown** overnight while still allowing picks:
 - Remaining time on the clock is preserved and resumes when sleep ends
 - Manual `/draft-pause` is separate (pauses the whole draft clock intentionally)
 
+## Pick-clock warnings
+
+Admins can re-announce who’s up as time runs out (any number of thresholds):
+
+```text
+/draft-warnings add seconds:60
+/draft-warnings add seconds:30
+/draft-warnings list
+/draft-warnings remove seconds:30
+/draft-warnings clear
+```
+
+Each warning must be **less than** `/draft-setup` `seconds_per_pick`. When the clock hits that many seconds remaining, the bot re-posts the on-clock ping + embed.
+
 ## Draft teams (names + co-owners)
 
 Team count is **not** fixed at 32 anymore.
@@ -284,6 +298,7 @@ In Discord:
 | Load player pool | `/draft-import-players` |
 | Start draft | `/draft-start` |
 | Pause / resume | `/draft-pause` `/draft-resume` |
+| Pick-clock warnings | `/draft-warnings` |
 | Skip current pick | `/draft-skip` |
 | Undo last pick | `/draft-undo` |
 | Admin force a pick | `/draft-set-pick` |
@@ -400,6 +415,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 | `/draft-import-presets` | Save preset picks for next start |
 | `/draft-start` | Build queue from start round and go live |
 | `/draft-pause` / `/draft-resume` | Pause/resume clock |
+| `/draft-warnings` | Add / list / remove / clear pick-clock warnings |
 | `/draft-end` | Stop the draft |
 | `/draft-skip` | Force-skip current pick (stays claimable) |
 | `/draft-undo` | Undo last recorded pick |

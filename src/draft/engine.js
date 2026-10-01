@@ -273,6 +273,26 @@ class DraftEngine {
     });
   }
 
+  async announceWarning(secondsLeft) {
+    const state = this.getState();
+    if (state.status !== 'running') return;
+    if (isInSleepWindow(this.getConfig())) return;
+
+    this.syncTeamsFromOrder(state);
+    const slot = this.currentSlot(state);
+    if (!slot || this.isFilled(state, slot.round, slot.pick)) return;
+
+    const channel = await this.getDraftChannel();
+    if (!channel) return;
+
+    const left = formatDuration(secondsLeft);
+    await channel.send({
+      content:
+        `⏰ **${left} left** — ${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** still on the clock.`,
+      embeds: [this.onClockEmbed(slot, state, secondsLeft)],
+    });
+  }
+
   startClock(state, { remainingMs = null } = {}) {
     const config = this.getConfig();
     if (state.status !== 'running') return;
@@ -308,9 +328,18 @@ class DraftEngine {
     state.clockEndsAt = Date.now() + ms;
     this.persist(state);
 
-    this.timer.start(ms, async () => {
-      await this.handleTimeout();
-    });
+    this.timer.start(
+      ms,
+      async () => {
+        await this.handleTimeout();
+      },
+      {
+        warningsSec: config.pickWarningsSec || [],
+        onWarning: async (secondsLeft) => {
+          await this.announceWarning(secondsLeft);
+        },
+      },
+    );
   }
 
   async handleTimeout() {
