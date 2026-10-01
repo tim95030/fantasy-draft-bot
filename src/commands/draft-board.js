@@ -23,14 +23,14 @@ function fantasyTeamLabel(pick) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('draft-board')
-    .setDescription('Show recent picks')
+    .setDescription('Show picks in draft order (Rd.pick)')
     .addUserOption((o) =>
       o.setName('manager').setDescription('Filter picks to one manager'),
     )
     .addIntegerOption((o) =>
       o
         .setName('limit')
-        .setDescription('How many recent picks to show (default 20)')
+        .setDescription('How many latest draft-order picks to show (default 20)')
         .setMinValue(1)
         .setMaxValue(50),
     ),
@@ -48,6 +48,9 @@ module.exports = {
           (Array.isArray(p.ownerIds) && p.ownerIds.map(String).includes(id)),
       );
     }
+    // Draft order (Rd.pick), not chronological fill time — catch-up skips
+    // belong next to their slot, e.g. 32.2 after 32.1 even if filled later.
+    picks.sort((a, b) => a.round - b.round || a.pick - b.pick);
     picks = picks.slice(-limit);
 
     if (!picks.length) {
