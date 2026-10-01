@@ -67,11 +67,13 @@ class DraftEngine {
 
   openSkipsForUser(state, discordUserId) {
     const id = String(discordUserId);
-    return state.skipped.filter((s) => {
-      if (this.isFilled(state, s.round, s.pick)) return false;
-      if (Array.isArray(s.ownerIds) && s.ownerIds.map(String).includes(id)) return true;
-      return String(s.discordUserId) === id;
-    });
+    return state.skipped
+      .filter((s) => {
+        if (this.isFilled(state, s.round, s.pick)) return false;
+        if (Array.isArray(s.ownerIds) && s.ownerIds.map(String).includes(id)) return true;
+        return String(s.discordUserId) === id;
+      })
+      .sort((a, b) => a.round - b.round || a.pick - b.pick);
   }
 
   findSkip(state, round, pick) {
@@ -482,25 +484,22 @@ class DraftEngine {
       }
       isCatchUp = Boolean(skippedOwned && !isCurrent);
     } else {
-      // No explicit slot: current turn (if this user owns it), else earliest open skip
-      if (
+      // No explicit slot: earliest open skip first, else current turn if owned
+      const skips = this.openSkipsForUser(state, discordUserId);
+      if (skips.length) {
+        const s = skips[0];
+        targetSlot = state.queue.find((q) => q.round === s.round && q.pick === s.pick);
+        isCatchUp = true;
+      } else if (
         current &&
         slotOwnedBy(current, discordUserId) &&
         !this.isFilled(state, current.round, current.pick)
       ) {
         targetSlot = current;
+      } else if (!adminOverride) {
+        throw new Error("It is not your team's turn and you have no open skipped picks.");
       } else {
-        const skips = this.openSkipsForUser(state, discordUserId);
-        if (!skips.length && !adminOverride) {
-          throw new Error("It is not your team's turn and you have no open skipped picks.");
-        }
-        if (skips.length) {
-          const s = skips[0];
-          targetSlot = state.queue.find((q) => q.round === s.round && q.pick === s.pick);
-          isCatchUp = true;
-        } else {
-          throw new Error('No target slot.');
-        }
+        throw new Error('No target slot.');
       }
     }
 

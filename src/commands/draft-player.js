@@ -187,12 +187,13 @@ module.exports = {
         teamMatchesSlot(targetTeam.team, current, idx) &&
         !engine.isFilled(state, current.round, current.pick);
 
-      if (onClockForTeam) {
-        round = current.round;
-        pick = current.pick;
-      } else if (teamSkip) {
+      // Catch-up first: open skips before the on-clock slot for this team.
+      if (teamSkip) {
         round = teamSkip.round;
         pick = teamSkip.pick;
+      } else if (onClockForTeam) {
+        round = current.round;
+        pick = current.pick;
       } else {
         await interaction.reply({
           content: `**${targetTeam.team.teamName}** is not on the clock and has no open skipped picks. Use \`/draft-set-pick\` to force a specific round.pick.`,
@@ -203,16 +204,17 @@ module.exports = {
     } else {
       const drafter = interaction.user.id;
       const openSkip = engine.openSkipsForUser(state, drafter)[0];
-      if (
+      // Catch-up first: fill open skips before the on-clock slot.
+      if (openSkip) {
+        round = openSkip.round;
+        pick = openSkip.pick;
+      } else if (
         current &&
         slotOwnedBy(current, drafter) &&
         !engine.isFilled(state, current.round, current.pick)
       ) {
         round = current.round;
         pick = current.pick;
-      } else if (openSkip) {
-        round = openSkip.round;
-        pick = openSkip.pick;
       } else if (current) {
         round = current.round;
         pick = current.pick;
