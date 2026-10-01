@@ -126,6 +126,20 @@ module.exports = {
       droppedWarnings.length > 0
         ? `\n• Dropped warnings ≥ new clock: ${droppedWarnings.map((s) => `${s}s`).join(', ')}`
         : '';
+
+    let announceNote = '';
+    if (channel) {
+      const state = engine.getState();
+      if (state.status === 'running' || state.status === 'paused') {
+        try {
+          await engine.announceOnClock(state);
+          announceNote = '\n• Re-posted on-clock notice in the new channel.';
+        } catch (err) {
+          announceNote = `\n• Could not announce in new channel: ${err.message}`;
+        }
+      }
+    }
+
     await interaction.reply({
       content: [
         'Draft config saved:',
@@ -140,6 +154,7 @@ module.exports = {
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
         warnNote,
+        announceNote,
       ]
         .filter(Boolean)
         .join('\n'),
