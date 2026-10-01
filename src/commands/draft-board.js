@@ -81,11 +81,6 @@ module.exports = {
         .setDescription('Max slots from the end (default: all for admins)')
         .setMinValue(1)
         .setMaxValue(200),
-    )
-    .addBooleanOption((o) =>
-      o
-        .setName('public')
-        .setDescription('Admin only: post the board in-channel for everyone'),
     ),
 
   async execute(interaction) {
@@ -93,17 +88,7 @@ module.exports = {
     const roundOpt = interaction.options.getInteger('round');
     const manager = interaction.options.getUser('manager');
     const limitOpt = interaction.options.getInteger('limit');
-    const wantPublic = interaction.options.getBoolean('public') || false;
 
-    if (wantPublic && !admin) {
-      await interaction.reply({
-        content: 'Only admins can post a public board (`public:True`).',
-        ephemeral: true,
-      });
-      return;
-    }
-
-    const ephemeral = !wantPublic;
     const state = engine.getState();
     engine.syncTeamsFromOrder(state);
 
@@ -156,9 +141,9 @@ module.exports = {
     const lines = entries.map(formatEntry);
     const chunks = chunkLines([header.trimEnd(), ...lines]);
 
-    await interaction.reply({ content: chunks[0], ephemeral });
+    await interaction.reply({ content: chunks[0], ephemeral: true });
     for (let i = 1; i < chunks.length; i += 1) {
-      await interaction.followUp({ content: chunks[i], ephemeral });
+      await interaction.followUp({ content: chunks[i], ephemeral: true });
     }
   },
 };
