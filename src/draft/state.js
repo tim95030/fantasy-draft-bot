@@ -8,6 +8,8 @@ function emptyState() {
     pausedAt: null,
     currentIndex: 0,
     clockEndsAt: null,
+    sleepPaused: false,
+    sleepRemainingMs: null,
     picks: [],
     skipped: [], // { round, pick, discordUserId, overallIndex, skippedAt }
     queue: [], // serialized slots

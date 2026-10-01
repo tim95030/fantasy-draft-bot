@@ -9,10 +9,11 @@ module.exports = {
     .setDescription('Show who is on the clock, timer, and open skips'),
 
   async execute(interaction) {
-    const { state, slot, secondsLeft, openSkips } = engine.statusSummary();
+    const { state, slot, secondsLeft, openSkips, sleeping, sleepLabel, wakeLabel } =
+      engine.statusSummary();
     const embed = new EmbedBuilder()
       .setTitle('Draft status')
-      .setColor(state.status === 'running' ? 0x1f6feb : 0x6e7681)
+      .setColor(state.status === 'running' ? (sleeping ? 0x6e7681 : 0x1f6feb) : 0x6e7681)
       .addFields(
         { name: 'Status', value: state.status, inline: true },
         {
@@ -24,7 +25,17 @@ module.exports = {
         },
         {
           name: 'Time left',
-          value: secondsLeft != null ? formatDuration(secondsLeft) : '—',
+          value: sleeping
+            ? `⏸ Sleep · ${secondsLeft != null ? formatDuration(secondsLeft) : '—'} left` +
+              (wakeLabel ? `\nResumes ${wakeLabel}` : '')
+            : secondsLeft != null
+              ? formatDuration(secondsLeft)
+              : '—',
+          inline: true,
+        },
+        {
+          name: 'Sleep hours',
+          value: sleepLabel,
           inline: true,
         },
         {

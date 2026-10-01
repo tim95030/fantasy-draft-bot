@@ -40,6 +40,7 @@ async function main() {
   client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}`);
     engine.resumeTimerIfNeeded();
+    engine.startSleepWatcher();
   });
 
   await client.login(process.env.DISCORD_TOKEN);

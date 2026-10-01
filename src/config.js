@@ -10,6 +10,10 @@ const DEFAULTS = {
   secondsPerPick: 120,
   snake: true,
   allowDuplicateOwners: false,
+  sleepEnabled: false,
+  sleepStart: '22:00',
+  sleepEnd: '08:00',
+  sleepTimezone: 'America/Los_Angeles',
 };
 
 function ensureConfigFile() {

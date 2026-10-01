@@ -16,6 +16,21 @@ It supports:
 
 See **[deploy/ORACLE.md](deploy/ORACLE.md)** for Always Free VM setup: create instance, install Node, systemd, and upload player CSV.
 
+## Sleep hours (overnight timer pause)
+
+Admins can pause the **pick countdown** overnight while still allowing picks:
+
+```text
+/draft-sleep set start:22:00 end:08:00 timezone:America/Los_Angeles enabled:True
+/draft-sleep status
+/draft-sleep disable
+```
+
+- Times are **24-hour `HH:MM`** in the given **IANA timezone** (shown in status/announcements)
+- Windows may cross midnight (e.g. 22:00 → 08:00)
+- Remaining time on the clock is preserved and resumes when sleep ends
+- Manual `/draft-pause` is separate (pauses the whole draft clock intentionally)
+
 ## Draft teams (names + co-owners)
 
 Team count is **not** fixed at 32 anymore.

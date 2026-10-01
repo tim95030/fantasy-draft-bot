@@ -16,6 +16,12 @@ const { loadState, saveState, resetState } = require('./state');
 const { DraftTimer } = require('./timer');
 const { formatPickLine } = require('./parser');
 const { formatDuration } = require('./formatDuration');
+const {
+  isInSleepWindow,
+  sleepWindowLabel,
+  nextSleepEndDate,
+  formatInZone,
+} = require('./sleepHours');
 
 class DraftEngine {
   constructor() {
@@ -99,17 +105,35 @@ class DraftEngine {
   onClockEmbed(slot, state, secondsLeft) {
     const skips = state.skipped.filter((s) => !this.isFilled(state, s.round, s.pick));
     const owners = mentionOwners(slot);
+    const config = this.getConfig();
+    const sleeping = state.sleepPaused || isInSleepWindow(config);
+
+    let timeValue = secondsLeft != null ? formatDuration(secondsLeft) : '—';
+    if (sleeping) {
+      const wake = nextSleepEndDate(config);
+      const wakeLabel = wake
+        ? formatInZone(wake, config.sleepTimezone || 'America/Los_Angeles')
+        : sleepWindowLabel(config);
+      const rem =
+        state.sleepRemainingMs != null
+          ? formatDuration(state.sleepRemainingMs / 1000)
+          : secondsLeft != null
+            ? formatDuration(secondsLeft)
+            : formatDuration(config.secondsPerPick);
+      timeValue = `⏸ Paused for sleep · ${rem} left · resumes ${wakeLabel}`;
+    }
+
     const embed = new EmbedBuilder()
-      .setTitle('On the clock')
-      .setColor(0x1f6feb)
+      .setTitle(sleeping ? 'On the clock (sleep hours)' : 'On the clock')
+      .setColor(sleeping ? 0x6e7681 : 0x1f6feb)
       .setDescription(
         `**${slot.round}.${slot.pick}** — **${slot.teamName || slot.displayName}** (${owners})`,
       )
       .addFields(
         {
           name: 'Time remaining',
-          value: secondsLeft != null ? formatDuration(secondsLeft) : '—',
-          inline: true,
+          value: timeValue,
+          inline: false,
         },
         {
           name: 'Progress',
@@ -131,7 +155,9 @@ class DraftEngine {
         },
       )
       .setFooter({
-        text: 'Pick format: Rd.pick Player Name POS, TEAM  e.g. 32.5 John Doe LW, ANA',
+        text: sleeping
+          ? `Picks still allowed. Sleep window: ${sleepWindowLabel(config)}`
+          : 'Pick format: Rd.pick Player Name POS, TEAM  e.g. 32.5 John Doe LW, ANA',
       });
     return embed;
   }
@@ -152,7 +178,7 @@ class DraftEngine {
     });
   }
 
-  startClock(state) {
+  startClock(state, { remainingMs = null } = {}) {
     const config = this.getConfig();
     if (state.status !== 'running') return;
 
@@ -160,13 +186,30 @@ class DraftEngine {
     if (!slot) {
       state.status = 'ended';
       state.clockEndsAt = null;
+      state.sleepPaused = false;
+      state.sleepRemainingMs = null;
       this.timer.clear();
       this.persist(state);
       this.getDraftChannel().then((ch) => ch?.send('Draft complete — all slots filled.'));
       return;
     }
 
-    const ms = Math.max(1, config.secondsPerPick) * 1000;
+    const fullMs = Math.max(1, config.secondsPerPick) * 1000;
+    const ms =
+      remainingMs != null && remainingMs > 0 ? remainingMs : fullMs;
+
+    // Quiet hours: keep picks open, but do not run the countdown
+    if (isInSleepWindow(config)) {
+      this.timer.clear();
+      state.sleepPaused = true;
+      state.sleepRemainingMs = ms;
+      state.clockEndsAt = null;
+      this.persist(state);
+      return;
+    }
+
+    state.sleepPaused = false;
+    state.sleepRemainingMs = null;
     state.clockEndsAt = Date.now() + ms;
     this.persist(state);
 
@@ -178,6 +221,15 @@ class DraftEngine {
   async handleTimeout() {
     const state = this.getState();
     if (state.status !== 'running') return;
+
+    // Safety: never skip during sleep hours
+    if (isInSleepWindow(this.getConfig())) {
+      const remaining = state.clockEndsAt
+        ? Math.max(0, state.clockEndsAt - Date.now())
+        : state.sleepRemainingMs || this.getConfig().secondsPerPick * 1000;
+      await this.enterSleepMode(state, remaining);
+      return;
+    }
 
     const slot = this.currentSlot(state);
     if (!slot) return;
@@ -526,11 +578,118 @@ class DraftEngine {
     const state = this.getState();
     const config = this.getConfig();
     const slot = this.currentSlot(state);
-    const secondsLeft = state.clockEndsAt
-      ? Math.max(0, Math.ceil((state.clockEndsAt - Date.now()) / 1000))
-      : null;
+    const sleeping = Boolean(state.sleepPaused) || isInSleepWindow(config);
+    let secondsLeft = null;
+    if (sleeping && state.sleepRemainingMs != null) {
+      secondsLeft = Math.max(0, Math.ceil(state.sleepRemainingMs / 1000));
+    } else if (state.clockEndsAt) {
+      secondsLeft = Math.max(0, Math.ceil((state.clockEndsAt - Date.now()) / 1000));
+    }
     const openSkips = state.skipped.filter((s) => !this.isFilled(state, s.round, s.pick));
-    return { state, config, slot, secondsLeft, openSkips };
+    const wakeAt = sleeping ? nextSleepEndDate(config) : null;
+    return {
+      state,
+      config,
+      slot,
+      secondsLeft,
+      openSkips,
+      sleeping,
+      sleepLabel: sleepWindowLabel(config),
+      wakeLabel: wakeAt
+        ? formatInZone(wakeAt, config.sleepTimezone || 'America/Los_Angeles')
+        : null,
+    };
+  }
+
+  /**
+   * Pause the pick clock for quiet hours; picks remain allowed.
+   */
+  async enterSleepMode(state = this.getState(), remainingMs = null) {
+    if (state.status !== 'running') return state;
+
+    let rem = remainingMs;
+    if (rem == null) {
+      if (state.clockEndsAt) rem = Math.max(0, state.clockEndsAt - Date.now());
+      else if (state.sleepRemainingMs != null) rem = state.sleepRemainingMs;
+      else rem = this.getConfig().secondsPerPick * 1000;
+    }
+
+    const already = state.sleepPaused && state.clockEndsAt == null;
+    this.timer.clear();
+    state.sleepPaused = true;
+    state.sleepRemainingMs = rem;
+    state.clockEndsAt = null;
+    this.persist(state);
+
+    if (!already) {
+      const config = this.getConfig();
+      const wake = nextSleepEndDate(config);
+      const channel = await this.getDraftChannel();
+      if (channel) {
+        await channel.send(
+          `🌙 **Sleep hours** — pick timer paused (${formatDuration(rem / 1000)} left on the clock). ` +
+            `Picks are still allowed. Timer resumes **${
+              wake
+                ? formatInZone(wake, config.sleepTimezone || 'America/Los_Angeles')
+                : sleepWindowLabel(config)
+            }**.`,
+        );
+      }
+    }
+    return state;
+  }
+
+  async exitSleepMode(state = this.getState()) {
+    if (state.status !== 'running') return state;
+    if (!state.sleepPaused && !isInSleepWindow(this.getConfig())) {
+      // nothing to do
+    }
+
+    const rem = state.sleepRemainingMs;
+    state.sleepPaused = false;
+    state.sleepRemainingMs = null;
+    this.persist(state);
+
+    const channel = await this.getDraftChannel();
+    if (channel) {
+      await channel.send(
+        `☀️ **Sleep hours over** — pick timer resumed` +
+          (rem != null ? ` (${formatDuration(rem / 1000)} left).` : '.'),
+      );
+    }
+
+    this.startClock(state, { remainingMs: rem });
+    await this.announceOnClock(this.getState());
+    return this.getState();
+  }
+
+  /**
+   * Called periodically to enter/exit sleep based on configured hours.
+   */
+  async checkSleepTransition() {
+    const state = this.getState();
+    if (state.status !== 'running') return;
+
+    const config = this.getConfig();
+    const shouldSleep = isInSleepWindow(config);
+
+    if (shouldSleep && !state.sleepPaused) {
+      await this.enterSleepMode(state);
+    } else if (!shouldSleep && state.sleepPaused) {
+      await this.exitSleepMode(state);
+    }
+  }
+
+  startSleepWatcher(intervalMs = 30_000) {
+    if (this._sleepWatcher) clearInterval(this._sleepWatcher);
+    this._sleepWatcher = setInterval(() => {
+      this.checkSleepTransition().catch((err) =>
+        console.error('Sleep transition check failed:', err),
+      );
+    }, intervalMs);
+    if (typeof this._sleepWatcher.unref === 'function') this._sleepWatcher.unref();
+    // Run once immediately
+    this.checkSleepTransition().catch(() => {});
   }
 
   exportPicksCsv() {
@@ -569,6 +728,20 @@ class DraftEngine {
   resumeTimerIfNeeded() {
     const state = this.getState();
     if (state.status !== 'running') return;
+
+    if (isInSleepWindow(this.getConfig())) {
+      const rem = state.clockEndsAt
+        ? Math.max(0, state.clockEndsAt - Date.now())
+        : state.sleepRemainingMs;
+      this.enterSleepMode(state, rem);
+      return;
+    }
+
+    if (state.sleepPaused) {
+      this.exitSleepMode(state);
+      return;
+    }
+
     const remaining = state.clockEndsAt ? state.clockEndsAt - Date.now() : 0;
     if (remaining <= 0) {
       this.handleTimeout();
