@@ -3,6 +3,26 @@
  * Times are "HH:MM" (24h) in an IANA timezone, e.g. America/Los_Angeles.
  */
 
+/** Common North American zones for autocomplete (IANA ids). */
+const NORTH_AMERICA_TIMEZONES = [
+  { id: 'America/St_Johns', label: 'Newfoundland' },
+  { id: 'America/Halifax', label: 'Atlantic (Halifax)' },
+  { id: 'America/New_York', label: 'Eastern (New York)' },
+  { id: 'America/Toronto', label: 'Eastern (Toronto)' },
+  { id: 'America/Detroit', label: 'Eastern (Detroit)' },
+  { id: 'America/Indiana/Indianapolis', label: 'Eastern (Indiana)' },
+  { id: 'America/Chicago', label: 'Central (Chicago)' },
+  { id: 'America/Winnipeg', label: 'Central (Winnipeg)' },
+  { id: 'America/Mexico_City', label: 'Central (Mexico City)' },
+  { id: 'America/Denver', label: 'Mountain (Denver)' },
+  { id: 'America/Edmonton', label: 'Mountain (Edmonton)' },
+  { id: 'America/Phoenix', label: 'Arizona (no DST)' },
+  { id: 'America/Los_Angeles', label: 'Pacific (Los Angeles)' },
+  { id: 'America/Vancouver', label: 'Pacific (Vancouver)' },
+  { id: 'America/Anchorage', label: 'Alaska (Anchorage)' },
+  { id: 'Pacific/Honolulu', label: 'Hawaii (Honolulu)' },
+];
+
 function parseHm(hm) {
   const m = String(hm || '')
     .trim()
@@ -29,7 +49,64 @@ function isValidTimeZone(tz) {
   }
 }
 
-/** Minutes since midnight in the given IANA timezone. */
+/** Current UTC offset string for a zone, e.g. "UTC-7" / "UTC-4". */
+function utcOffsetLabel(timeZone, date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const raw = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+    const m = raw.replace('GMT', 'UTC').match(/UTC([+-])(\d{1,2})(?::?(\d{2}))?/i);
+    if (m) {
+      const sign = m[1];
+      const hh = String(Number(m[2]));
+      const mm = m[3] && m[3] !== '00' ? `:${m[3]}` : '';
+      return `UTC${sign}${hh}${mm}`;
+    }
+    const a = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
+    const b = new Date(date.toLocaleString('en-US', { timeZone }));
+    const diffMin = Math.round((b - a) / 60000);
+    const sign = diffMin >= 0 ? '+' : '-';
+    const abs = Math.abs(diffMin);
+    const oh = Math.floor(abs / 60);
+    const om = abs % 60;
+    return om ? `UTC${sign}${oh}:${String(om).padStart(2, '0')}` : `UTC${sign}${oh}`;
+  } catch {
+    return 'UTC?';
+  }
+}
+
+function timezoneChoiceLabel(entry, date = new Date()) {
+  const offset = utcOffsetLabel(entry.id, date);
+  return `${entry.label} · ${offset}`.slice(0, 100);
+}
+
+function searchNorthAmericaTimezones(query, limit = 25) {
+  const q = String(query || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  const now = new Date();
+  const scored = [];
+  for (const entry of NORTH_AMERICA_TIMEZONES) {
+    const hay = `${entry.label} ${entry.id} ${utcOffsetLabel(entry.id, now)}`.toLowerCase();
+    let score = 0;
+    if (!q) score = 1;
+    else if (entry.id.toLowerCase() === q) score = 100;
+    else if (entry.label.toLowerCase().startsWith(q)) score = 90;
+    else if (hay.includes(q)) score = 70;
+    else if (q.split(' ').every((part) => hay.includes(part))) score = 50;
+    else continue;
+    scored.push({ score, entry });
+  }
+  scored.sort((a, b) => b.score - a.score || a.entry.label.localeCompare(b.entry.label));
+  return scored.slice(0, limit).map((s) => ({
+    name: timezoneChoiceLabel(s.entry, now),
+    value: s.entry.id.slice(0, 100),
+  }));
+}
+
 function minutesNowInZone(timeZone, date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -42,42 +119,35 @@ function minutesNowInZone(timeZone, date = new Date()) {
   return hour * 60 + minute;
 }
 
-/**
- * True when current local time in `timeZone` is inside [start, end).
- * Supports windows that cross midnight (e.g. 22:00 → 08:00).
- */
 function isInSleepWindow(config, date = new Date()) {
   if (!config?.sleepEnabled) return false;
   const tz = config.sleepTimezone || 'America/Los_Angeles';
   const start = parseHm(config.sleepStart);
   const end = parseHm(config.sleepEnd);
   if (start == null || end == null) return false;
-  if (start === end) return false; // zero-length / invalid
+  if (start === end) return false;
 
   const now = minutesNowInZone(tz, date);
   if (start < end) {
     return now >= start && now < end;
   }
-  // Crosses midnight: e.g. 22:00–08:00
   return now >= start || now < end;
 }
 
 function sleepWindowLabel(config) {
   if (!config?.sleepEnabled) return 'Sleep hours off';
   const tz = config.sleepTimezone || 'America/Los_Angeles';
-  return `${config.sleepStart}–${config.sleepEnd} (${tz})`;
+  const offset = isValidTimeZone(tz) ? utcOffsetLabel(tz) : '';
+  const known = NORTH_AMERICA_TIMEZONES.find((z) => z.id === tz);
+  const nice = known ? known.label : tz;
+  return `${config.sleepStart}–${config.sleepEnd} (${nice}${offset ? `, ${offset}` : ''})`;
 }
 
-/**
- * Next Date when sleep ends (approximate, within ~1 day).
- */
 function nextSleepEndDate(config, date = new Date()) {
   if (!config?.sleepEnabled) return null;
-  const tz = config.sleepTimezone || 'America/Los_Angeles';
   const end = parseHm(config.sleepEnd);
   if (end == null) return null;
 
-  // Walk minute-by-minute up to 25h — simple and correct across DST edges
   const cursor = new Date(date.getTime());
   for (let i = 0; i < 60 * 25; i += 1) {
     cursor.setMinutes(cursor.getMinutes() + 1);
@@ -101,9 +171,13 @@ function formatInZone(date, timeZone) {
 }
 
 module.exports = {
+  NORTH_AMERICA_TIMEZONES,
   parseHm,
   formatHm,
   isValidTimeZone,
+  utcOffsetLabel,
+  timezoneChoiceLabel,
+  searchNorthAmericaTimezones,
   minutesNowInZone,
   isInSleepWindow,
   sleepWindowLabel,
