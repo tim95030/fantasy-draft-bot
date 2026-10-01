@@ -5,19 +5,8 @@ const { engine } = require('../draft/engine');
 const {
   loadOrder,
   normalizeTeam,
-  slotOwnedBy,
   ownerIds,
 } = require('../draft/order');
-
-function teamMatchesSlot(team, slot) {
-  if (!team || !slot) return false;
-  if (slot.teamName && team.teamName && slot.teamName === team.teamName) return true;
-  const ids = new Set(ownerIds(team).map(String));
-  if (Array.isArray(slot.ownerIds) && slot.ownerIds.some((id) => ids.has(String(id)))) {
-    return true;
-  }
-  return ids.has(String(slot.discordUserId));
-}
 
 function resolveTeamFromOption(value) {
   const order = loadOrder();
@@ -158,48 +147,28 @@ module.exports = {
       const owners = ownerIds(targetTeam.team);
       drafterId = owners[0] || interaction.user.id;
 
-      const teamSkip = state.skipped.find(
-        (s) =>
-          !engine.isFilled(state, s.round, s.pick) && teamMatchesSlot(targetTeam.team, s),
+      const target = engine.oldestOpenSlotForTeam(
+        state,
+        targetTeam.team,
+        targetTeam.index,
       );
-
-      if (
-        current &&
-        teamMatchesSlot(targetTeam.team, current) &&
-        !engine.isFilled(state, current.round, current.pick)
-      ) {
-        round = current.round;
-        pick = current.pick;
-      } else if (teamSkip) {
-        round = teamSkip.round;
-        pick = teamSkip.pick;
-      } else if (current) {
-        // Admin force onto the named team's identity for the current clock? No —
-        // require the team to be due or skipped.
+      if (!target) {
         await interaction.reply({
           content: `**${targetTeam.team.teamName}** is not on the clock and has no open skipped picks. Use \`/draft-set-pick\` to force a specific round.pick.`,
           ephemeral: true,
         });
         return;
-      } else {
-        const config = engine.getConfig();
-        round = config.startRound;
-        pick = targetTeam.index + 1;
       }
+      round = target.round;
+      pick = target.pick;
     } else {
       const drafter = interaction.user.id;
-      const openSkip = engine.openSkipsForUser(state, drafter)[0];
-      if (
-        current &&
-        slotOwnedBy(current, drafter) &&
-        !engine.isFilled(state, current.round, current.pick)
-      ) {
-        round = current.round;
-        pick = current.pick;
-      } else if (openSkip) {
-        round = openSkip.round;
-        pick = openSkip.pick;
+      const target = engine.oldestOpenSlotForUser(state, drafter);
+      if (target) {
+        round = target.round;
+        pick = target.pick;
       } else if (current) {
+        // Not their turn / no skip — still format against the clock for post_only / error hint
         round = current.round;
         pick = current.pick;
       } else {

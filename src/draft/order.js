@@ -174,10 +174,12 @@ function buildQueue({ teams, snake, startRound, totalRounds }) {
     const order = reverse ? [...normalized].reverse() : normalized;
     for (let i = 0; i < n; i += 1) {
       const team = order[i];
+      const teamIndex = reverse ? n - 1 - i : i;
       const ids = ownerIds(team);
       queue.push({
         round,
         pick: i + 1,
+        teamIndex,
         teamName: team.teamName,
         ownerIds: ids,
         // Primary id kept for older call sites / export compatibility
