@@ -461,10 +461,6 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 `/draft-player` tips:
 
 - Type **≥2 characters**; results show `Name — POS, TEAM`
-<<<<<<< HEAD
-=======
-- `post_only: true` only posts the formatted line
->>>>>>> origin/tschroeder/admin-draft-for-team
 - Admins drafting for someone else: use `/draft-for-team` (not this command)
 
 ---
