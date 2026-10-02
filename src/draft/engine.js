@@ -378,11 +378,16 @@ class DraftEngine {
    * Callers that post a "Recorded …" line should await that message first.
    */
   async proceedToNextPick({ remainingMs = null, announce = true } = {}) {
-    const state = this.getState();
-    if (state.status !== 'running') return state;
-
     while (true) {
+      // Always reload — submitPick persists a fresh copy; looping on a stale
+      // object re-targets the same slot and burns queue entries.
+      const state = this.getState();
+      if (state.status !== 'running') return state;
+
+      const indexBefore = state.currentIndex;
       const slot = this.advanceToNextOpen(state);
+      if (state.currentIndex !== indexBefore) this.persist(state);
+
       if (!slot) {
         state.status = 'ended';
         state.clockEndsAt = null;
@@ -395,7 +400,7 @@ class DraftEngine {
         return this.getState();
       }
 
-      const autoResult = this.tryAutoDraftOnce(state, slot);
+      const autoResult = this.tryAutoDraftOnce(slot);
       if (!autoResult) break;
       await this.announceAutodraft(autoResult);
     }
@@ -412,9 +417,8 @@ class DraftEngine {
    * queued player. Returns the submitPick result, or null.
    * Does not start the clock — caller runs proceedToNextPick / startClock.
    */
-  tryAutoDraftOnce(state, slot) {
+  tryAutoDraftOnce(slot) {
     if (!slot || slot.teamIndex == null || slot.teamIndex < 0) return null;
-    if (this.isFilled(state, slot.round, slot.pick)) return null;
 
     const entry = playerQueue.getEntry(slot.teamIndex);
     if (!entry.autoDraft) return null;
@@ -427,7 +431,10 @@ class DraftEngine {
     if (!drafterId) return null;
 
     while (true) {
-      const fantraxId = playerQueue.shiftNextAvailable(slot.teamIndex, pool);
+      const live = this.getState();
+      if (this.isFilled(live, slot.round, slot.pick)) return null;
+
+      const fantraxId = playerQueue.peekNextAvailable(slot.teamIndex, pool);
       if (!fantraxId) return null;
 
       try {
@@ -442,6 +449,12 @@ class DraftEngine {
         console.warn(
           `Autodraft skipped ${fantraxId} for ${slot.round}.${slot.pick}: ${err.message}`,
         );
+        // Avoid infinite retry on a stuck id (e.g. race); drop and try next.
+        try {
+          playerQueue.removePlayer(slot.teamIndex, fantraxId);
+        } catch {
+          return null;
+        }
       }
     }
   }
@@ -811,6 +824,7 @@ class DraftEngine {
     this.removeSkip(state, pickRecord.round, pickRecord.pick);
     pool.markTaken(player.fantraxId, true);
     pool.saveToFile();
+    playerQueue.removeFantraxIdFromAllQueues(player.fantraxId);
 
     const wasCurrent =
       current &&
@@ -896,6 +910,7 @@ class DraftEngine {
     if (oldPlayer) pool.markTaken(oldPlayer.fantraxId, false);
     pool.markTaken(newPlayer.fantraxId, true);
     pool.saveToFile();
+    playerQueue.removeFantraxIdFromAllQueues(newPlayer.fantraxId);
 
     existing.fantraxId = newPlayer.fantraxId;
     existing.playerName = newPlayer.name;
