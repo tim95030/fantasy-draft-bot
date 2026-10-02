@@ -55,7 +55,7 @@ Any team owner can build a personal **pick queue** (max 25). Queues are **per fa
 - Autodraft still fires during sleep hours (draft keeps moving for queued teams).
 - Manage replies are ephemeral; successful autodrafts are public in the draft channel.
 
-Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts).
+Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids).
 
 ## Pick-clock warnings
 
