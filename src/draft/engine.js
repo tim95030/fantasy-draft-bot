@@ -262,15 +262,14 @@ class DraftEngine {
         },
         {
           name: 'How to pick',
-          value:
-            'Use `/draft-player` (autocomplete) or post `Rd.pick Name POS, TEAM`',
+          value: 'Use `/draft-player` (autocomplete)',
           inline: false,
         },
       )
       .setFooter({
         text: sleeping
           ? `Picks still allowed. Sleep window: ${sleepWindowLabel(config)}`
-          : 'Example: 32.5 John Doe LW, ANA',
+          : 'Search with /draft-player to submit your pick',
       });
     return embed;
   }
