@@ -326,6 +326,7 @@ In Discord:
 | Skip current pick | `/draft-skip` |
 | Undo last pick | `/draft-undo` |
 | Admin force a pick | `/draft-set-pick` |
+| Admin draft for a team | `/draft-for-team` |
 | Export results | `/draft-export` |
 | Search + draft | `/draft-player` |
 | Pick queue / autodraft | `/draft-queue` |
@@ -445,6 +446,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 | `/draft-skip` | Force-skip current pick (stays claimable) |
 | `/draft-undo` | Undo last recorded pick |
 | `/draft-set-pick` | Force-assign player to a `round` + `pick` |
+| `/draft-for-team` | Submit a pick for a team (on clock or open skip) |
 | `/draft-export` | Download picks CSV (includes `fantraxId`) |
 
 ### Everyone
@@ -459,8 +461,8 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 `/draft-player` tips:
 
 - Type **≥2 characters**; results show `Name — POS, TEAM`
-- Admins can use `for_manager` to submit for someone else
 - `post_only: true` only posts the formatted line
+- Admins drafting for someone else: use `/draft-for-team` (not this command)
 
 ---
 
