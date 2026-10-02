@@ -1222,9 +1222,19 @@ class DraftEngine {
     if (remaining <= 0) {
       this.handleTimeout();
     } else {
-      this.timer.start(remaining, async () => {
-        await this.handleTimeout();
-      });
+      const config = this.getConfig();
+      this.timer.start(
+        remaining,
+        async () => {
+          await this.handleTimeout();
+        },
+        {
+          warningsSec: config.pickWarningsSec || [],
+          onWarning: async (secondsLeft) => {
+            await this.announceWarning(secondsLeft);
+          },
+        },
+      );
     }
   }
 }
