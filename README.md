@@ -451,7 +451,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 
 | Command | Purpose |
 |---------|---------|
-| `/draft-player` | Autocomplete search → submit pick (or `post_only`) |
+| `/draft-player` | Autocomplete search → submit pick |
 | `/draft-status` | On the clock, timer, open skips |
 | `/draft-board` | Recent picks (optional manager filter) |
 | `/draft-pool search` | Availability check |
@@ -459,8 +459,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 `/draft-player` tips:
 
 - Type **≥2 characters**; results show `Name — POS, TEAM`
-- Admins can use `for_manager` to submit for someone else
-- `post_only: true` only posts the formatted line
+- Admins drafting for someone else: use `/draft-for-team` (not this command)
 
 ---
 
