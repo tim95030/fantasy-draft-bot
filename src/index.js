@@ -31,6 +31,10 @@ async function main() {
   try {
     const n = pool.loadFromFile();
     console.log(`Loaded ${n} players (${pool.available().length} available).`);
+    const playerQueue = require('./draft/playerQueue');
+    if (playerQueue.pruneTakenFromAllQueues(pool)) {
+      console.log('Pruned already-drafted players from pick queues.');
+    }
   } catch (err) {
     console.warn(`Players not loaded yet: ${err.message}`);
   }

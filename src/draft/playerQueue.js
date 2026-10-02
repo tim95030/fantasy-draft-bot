@@ -113,6 +113,22 @@ function setAutoDraft(teamIndex, enabled) {
 }
 
 /**
+ * Drop missing/taken ids, persist if needed, return first remaining id (still in queue).
+ */
+function peekNextAvailable(teamIndex, pool) {
+  const entry = getEntry(teamIndex);
+  const pruned = entry.fantraxIds.filter((id) => {
+    const player = pool.get(id);
+    return Boolean(player) && !player.taken;
+  });
+  if (pruned.length !== entry.fantraxIds.length) {
+    entry.fantraxIds = pruned;
+    setEntry(teamIndex, entry);
+  }
+  return pruned[0] || null;
+}
+
+/**
  * Remove and return the first fantraxId that is still in the pool and not taken.
  * Drops missing/taken ids from the queue as it goes.
  */
@@ -135,6 +151,50 @@ function shiftNextAvailable(teamIndex, pool) {
   return next;
 }
 
+/**
+ * Remove a drafted player from every team's queue.
+ */
+function removeFantraxIdFromAllQueues(fantraxId) {
+  const id = String(fantraxId);
+  const all = loadAll();
+  let changed = false;
+  for (const [key, raw] of Object.entries(all)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const ids = Array.isArray(raw.fantraxIds) ? raw.fantraxIds.map(String) : [];
+    const next = ids.filter((x) => x !== id);
+    if (next.length === ids.length) continue;
+    all[key] = {
+      autoDraft: Boolean(raw.autoDraft),
+      fantraxIds: next,
+    };
+    changed = true;
+  }
+  if (changed) saveAll(all);
+  return changed;
+}
+
+/** Drop any already-taken / missing ids from all queues (startup hygiene). */
+function pruneTakenFromAllQueues(pool) {
+  const all = loadAll();
+  let changed = false;
+  for (const [key, raw] of Object.entries(all)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const ids = Array.isArray(raw.fantraxIds) ? raw.fantraxIds.map(String) : [];
+    const next = ids.filter((id) => {
+      const player = pool.get(id);
+      return Boolean(player) && !player.taken;
+    });
+    if (next.length === ids.length) continue;
+    all[key] = {
+      autoDraft: Boolean(raw.autoDraft),
+      fantraxIds: next,
+    };
+    changed = true;
+  }
+  if (changed) saveAll(all);
+  return changed;
+}
+
 module.exports = {
   MAX_QUEUE,
   loadAll,
@@ -145,5 +205,8 @@ module.exports = {
   move,
   clear,
   setAutoDraft,
+  peekNextAvailable,
   shiftNextAvailable,
+  removeFantraxIdFromAllQueues,
+  pruneTakenFromAllQueues,
 };
