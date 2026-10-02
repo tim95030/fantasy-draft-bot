@@ -267,7 +267,7 @@ module.exports = {
           });
           return;
         }
-        playerQueue.addPlayer(index, fantraxId);
+        playerQueue.addPlayer(index, fantraxId, { by: interaction.user.id });
         await interaction.reply({
           content: `Added **${pool.formatLabel(player)}** to **${team.teamName}** queue.\n\n${formatQueueList(index, team.teamName)}`,
           ephemeral: true,
@@ -277,7 +277,9 @@ module.exports = {
 
       if (sub === 'remove') {
         const position = interaction.options.getInteger('position');
-        const removedId = playerQueue.removeAt(index, position);
+        const removedId = playerQueue.removeAt(index, position, {
+          by: interaction.user.id,
+        });
         const p = pool.get(removedId);
         const label = p ? pool.formatLabel(p) : removedId;
         await interaction.reply({
@@ -290,7 +292,7 @@ module.exports = {
       if (sub === 'move') {
         const from = interaction.options.getInteger('from');
         const to = interaction.options.getInteger('to');
-        playerQueue.move(index, from, to);
+        playerQueue.move(index, from, to, { by: interaction.user.id });
         await interaction.reply({
           content: `Moved #${from} → #${to} for **${team.teamName}**.\n\n${formatQueueList(index, team.teamName)}`,
           ephemeral: true,
@@ -299,7 +301,7 @@ module.exports = {
       }
 
       if (sub === 'clear') {
-        playerQueue.clear(index);
+        playerQueue.clear(index, { by: interaction.user.id });
         await interaction.reply({
           content: `Cleared **${team.teamName}** queue.\n\n${formatQueueList(index, team.teamName)}`,
           ephemeral: true,
@@ -309,7 +311,7 @@ module.exports = {
 
       if (sub === 'autodraft') {
         const enabled = interaction.options.getBoolean('enabled');
-        playerQueue.setAutoDraft(index, enabled);
+        playerQueue.setAutoDraft(index, enabled, { by: interaction.user.id });
         const entry = playerQueue.getEntry(index);
         await interaction.reply({
           content:

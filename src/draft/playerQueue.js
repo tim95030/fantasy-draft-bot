@@ -1,5 +1,6 @@
 const fs = require('fs');
 const paths = require('../paths');
+const { audit } = require('./audit');
 
 const MAX_QUEUE = 25;
 
@@ -50,7 +51,7 @@ function setEntry(teamIndex, entry) {
   return getEntry(teamIndex);
 }
 
-function addPlayer(teamIndex, fantraxId) {
+function addPlayer(teamIndex, fantraxId, meta = {}) {
   const entry = getEntry(teamIndex);
   const id = String(fantraxId);
   if (entry.fantraxIds.includes(id)) {
@@ -60,10 +61,18 @@ function addPlayer(teamIndex, fantraxId) {
     throw new Error(`Queue is full (max ${MAX_QUEUE}). Remove someone first.`);
   }
   entry.fantraxIds.push(id);
-  return setEntry(teamIndex, entry);
+  setEntry(teamIndex, entry);
+  audit('queue.add', {
+    teamIndex,
+    fantraxId: id,
+    queueLen: entry.fantraxIds.length,
+    autoDraft: entry.autoDraft,
+    ...meta,
+  });
+  return getEntry(teamIndex);
 }
 
-function removeAt(teamIndex, position1Based) {
+function removeAt(teamIndex, position1Based, meta = {}) {
   const entry = getEntry(teamIndex);
   const idx = Number(position1Based) - 1;
   if (!Number.isInteger(idx) || idx < 0 || idx >= entry.fantraxIds.length) {
@@ -71,20 +80,33 @@ function removeAt(teamIndex, position1Based) {
   }
   const [removed] = entry.fantraxIds.splice(idx, 1);
   setEntry(teamIndex, entry);
+  audit('queue.remove', {
+    teamIndex,
+    fantraxId: removed,
+    position: Number(position1Based),
+    queueLen: entry.fantraxIds.length,
+    ...meta,
+  });
   return removed;
 }
 
-function removePlayer(teamIndex, fantraxId) {
+function removePlayer(teamIndex, fantraxId, meta = {}) {
   const entry = getEntry(teamIndex);
   const id = String(fantraxId);
   const idx = entry.fantraxIds.indexOf(id);
   if (idx < 0) throw new Error('That player is not in your queue.');
   entry.fantraxIds.splice(idx, 1);
   setEntry(teamIndex, entry);
+  audit('queue.remove', {
+    teamIndex,
+    fantraxId: id,
+    queueLen: entry.fantraxIds.length,
+    ...meta,
+  });
   return id;
 }
 
-function move(teamIndex, from1, to1) {
+function move(teamIndex, from1, to1, meta = {}) {
   const entry = getEntry(teamIndex);
   const from = Number(from1) - 1;
   const to = Number(to1) - 1;
@@ -97,19 +119,38 @@ function move(teamIndex, from1, to1) {
   if (from === to) return entry;
   const [item] = entry.fantraxIds.splice(from, 1);
   entry.fantraxIds.splice(to, 0, item);
-  return setEntry(teamIndex, entry);
+  setEntry(teamIndex, entry);
+  audit('queue.move', {
+    teamIndex,
+    fantraxId: item,
+    from: Number(from1),
+    to: Number(to1),
+    queueLen: entry.fantraxIds.length,
+    ...meta,
+  });
+  return getEntry(teamIndex);
 }
 
-function clear(teamIndex) {
+function clear(teamIndex, meta = {}) {
   const entry = getEntry(teamIndex);
+  const prevLen = entry.fantraxIds.length;
   entry.fantraxIds = [];
-  return setEntry(teamIndex, entry);
+  setEntry(teamIndex, entry);
+  audit('queue.clear', { teamIndex, removed: prevLen, ...meta });
+  return getEntry(teamIndex);
 }
 
-function setAutoDraft(teamIndex, enabled) {
+function setAutoDraft(teamIndex, enabled, meta = {}) {
   const entry = getEntry(teamIndex);
   entry.autoDraft = Boolean(enabled);
-  return setEntry(teamIndex, entry);
+  setEntry(teamIndex, entry);
+  audit('queue.autodraft', {
+    teamIndex,
+    enabled: entry.autoDraft,
+    queueLen: entry.fantraxIds.length,
+    ...meta,
+  });
+  return getEntry(teamIndex);
 }
 
 /**
@@ -170,6 +211,9 @@ function removeFantraxIdFromAllQueues(fantraxId) {
     changed = true;
   }
   if (changed) saveAll(all);
+  if (changed) {
+    audit('queue.purge_taken', { fantraxId: id });
+  }
   return changed;
 }
 
@@ -177,6 +221,7 @@ function removeFantraxIdFromAllQueues(fantraxId) {
 function pruneTakenFromAllQueues(pool) {
   const all = loadAll();
   let changed = false;
+  let removed = 0;
   for (const [key, raw] of Object.entries(all)) {
     if (!raw || typeof raw !== 'object') continue;
     const ids = Array.isArray(raw.fantraxIds) ? raw.fantraxIds.map(String) : [];
@@ -185,6 +230,7 @@ function pruneTakenFromAllQueues(pool) {
       return Boolean(player) && !player.taken;
     });
     if (next.length === ids.length) continue;
+    removed += ids.length - next.length;
     all[key] = {
       autoDraft: Boolean(raw.autoDraft),
       fantraxIds: next,
@@ -192,6 +238,7 @@ function pruneTakenFromAllQueues(pool) {
     changed = true;
   }
   if (changed) saveAll(all);
+  if (changed) audit('queue.prune_startup', { removed });
   return changed;
 }
 

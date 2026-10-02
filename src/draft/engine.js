@@ -18,6 +18,7 @@ const { DraftTimer } = require('./timer');
 const { formatPickLine } = require('./parser');
 const { formatDuration } = require('./formatDuration');
 const playerQueue = require('./playerQueue');
+const { audit } = require('./audit');
 const {
   isInSleepWindow,
   sleepWindowLabel,
@@ -427,30 +428,72 @@ class DraftEngine {
         (Array.isArray(slot.ownerIds) && slot.ownerIds[0]) ||
         '',
     );
-    if (!drafterId) return null;
+    if (!drafterId) {
+      audit('autodraft.skip', {
+        reason: 'no_owner',
+        teamIndex: slot.teamIndex,
+        round: slot.round,
+        pick: slot.pick,
+      });
+      return null;
+    }
 
     while (true) {
       const live = this.getState();
-      if (this.isFilled(live, slot.round, slot.pick)) return null;
+      if (this.isFilled(live, slot.round, slot.pick)) {
+        audit('autodraft.skip', {
+          reason: 'already_filled',
+          teamIndex: slot.teamIndex,
+          round: slot.round,
+          pick: slot.pick,
+        });
+        return null;
+      }
 
       const fantraxId = playerQueue.peekNextAvailable(slot.teamIndex, pool);
-      if (!fantraxId) return null;
+      if (!fantraxId) {
+        audit('autodraft.skip', {
+          reason: 'empty_queue',
+          teamIndex: slot.teamIndex,
+          round: slot.round,
+          pick: slot.pick,
+          queueLen: playerQueue.getEntry(slot.teamIndex).fantraxIds.length,
+        });
+        return null;
+      }
 
       try {
-        return this.submitPick({
+        const result = this.submitPick({
           discordUserId: drafterId,
           fantraxId,
           round: slot.round,
           pick: slot.pick,
           source: 'autodraft',
         });
+        audit('autodraft.ok', {
+          teamIndex: slot.teamIndex,
+          round: slot.round,
+          pick: slot.pick,
+          fantraxId,
+          teamName: slot.teamName || slot.displayName,
+        });
+        return result;
       } catch (err) {
         console.warn(
           `Autodraft skipped ${fantraxId} for ${slot.round}.${slot.pick}: ${err.message}`,
         );
+        audit('autodraft.fail', {
+          teamIndex: slot.teamIndex,
+          round: slot.round,
+          pick: slot.pick,
+          fantraxId,
+          error: err.message,
+        });
         // Avoid infinite retry on a stuck id (e.g. race); drop and try next.
         try {
-          playerQueue.removePlayer(slot.teamIndex, fantraxId);
+          playerQueue.removePlayer(slot.teamIndex, fantraxId, {
+            reason: 'autodraft_fail',
+          });
         } catch {
           return null;
         }
@@ -511,6 +554,14 @@ class DraftEngine {
 
     state.currentIndex += 1;
     this.persist(state);
+    audit('skip', {
+      reason: 'timeout',
+      round: slot.round,
+      pick: slot.pick,
+      teamIndex: slot.teamIndex,
+      teamName: slot.teamName || slot.displayName,
+      discordUserId: slot.discordUserId,
+    });
     await this.proceedToNextPick();
   }
 
@@ -665,6 +716,11 @@ class DraftEngine {
     this.advanceToNextOpen(state);
     this.persist(state);
     pool.saveToFile();
+    audit('draft.start', {
+      startRound: config.startRound,
+      totalRounds: config.totalRounds,
+      queueLen: state.queue.length,
+    });
 
     if (announce) {
       return this.proceedToNextPick().then(() => this.getState());
@@ -680,6 +736,7 @@ class DraftEngine {
     state.pausedAt = new Date().toISOString();
     this.timer.clear();
     this.persist(state);
+    audit('draft.pause', {});
     return state;
   }
 
@@ -689,6 +746,7 @@ class DraftEngine {
     state.status = 'running';
     state.pausedAt = null;
     this.persist(state);
+    audit('draft.resume', {});
     return this.proceedToNextPick();
   }
 
@@ -699,6 +757,7 @@ class DraftEngine {
     this.timer.clear();
     this.persist(state);
     pool.saveToFile();
+    audit('draft.end', {});
     return state;
   }
 
@@ -726,6 +785,14 @@ class DraftEngine {
     }
     state.currentIndex += 1;
     this.persist(state);
+    audit('skip', {
+      reason: 'admin',
+      round: slot.round,
+      pick: slot.pick,
+      teamIndex: slot.teamIndex,
+      teamName: slot.teamName || slot.displayName,
+      discordUserId: slot.discordUserId,
+    });
     // Caller must await proceedToNextPick() after posting the skip notice
     return { state: this.getState(), slot };
   }
@@ -841,6 +908,18 @@ class DraftEngine {
       this.persist(state);
     }
 
+    audit('pick', {
+      source,
+      round: pickRecord.round,
+      pick: pickRecord.pick,
+      fantraxId: pickRecord.fantraxId,
+      teamIndex: targetSlot.teamIndex,
+      teamName: pickRecord.teamName,
+      discordUserId: pickRecord.discordUserId,
+      catchUp: isCatchUp,
+      wasCurrent,
+    });
+
     return {
       pickRecord,
       player,
@@ -922,6 +1001,15 @@ class DraftEngine {
 
     this.persist(state);
 
+    audit('pick.edit', {
+      round: existing.round,
+      pick: existing.pick,
+      fromFantraxId: previous.fantraxId,
+      toFantraxId: newPlayer.fantraxId,
+      teamName: existing.teamName || existing.displayName,
+      by: String(discordUserId),
+    });
+
     return {
       previous,
       pickRecord: existing,
@@ -953,6 +1041,13 @@ class DraftEngine {
 
     this.persist(state);
     if (state.status === 'running') this.startClock(state);
+    audit('pick.undo', {
+      round: last.round,
+      pick: last.pick,
+      fantraxId: last.fantraxId,
+      teamName: last.teamName || last.displayName,
+      source: last.source,
+    });
     return last;
   }
 

@@ -9,6 +9,7 @@ data/config.json
 data/draft-state.json
 data/preset-picks.csv
 data/player-queues.json
+data/audit.jsonl
 *.log
 *.swp
 *.swo
