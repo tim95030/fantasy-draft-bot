@@ -55,6 +55,17 @@ Any team owner can build a personal **pick queue** (max 25). Queues are **per fa
 - Autodraft still fires during sleep hours (draft keeps moving for queued teams).
 - Manage replies are ephemeral; successful autodrafts are public in the draft channel.
 
+## Skip accel (inactive teams)
+
+Enabled by default. When a team comes **on the clock** (after autodraft has a chance):
+
+- **Autodraft first** if that team has autodraft on and an available queued player — full pick, no shortcut.
+- **1 existing open skip** → clock is **1/4** of `/draft-setup seconds_per_pick` (1h → 15m).
+- **2+ existing open skips** → that pick is skipped immediately and the draft moves on.
+- Catch-up is unchanged: they can still fill any open skip later.
+
+Toggle: `/draft-skip-accel enable` / `disable` / `status`, or `/draft-setup skip_accel:False`.
+
 Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids).
 
 ## Pick-clock warnings
@@ -426,7 +437,7 @@ Example: `32.5 John Doe LW, ANA`
 2. Player must match the pool (name + POS + team) and not be taken
 3. If the name is ambiguous, the bot lists candidates (with Fantrax IDs)
 
-When the timer expires, the pick is **skipped** (not voided). That manager can later post their `Rd.pick …` line to catch up without stopping the current clock.
+When the timer expires, the pick is **skipped** (not voided). That manager can later post their `Rd.pick …` line to catch up without stopping the current clock. Skip accel (on by default) shortens or auto-skips later turns for teams that already have open skips; see **Skip accel** above.
 
 ---
 
@@ -446,6 +457,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 | `/draft-warnings` | Add / list / remove / clear pick-clock warnings |
 | `/draft-end` | Stop the draft |
 | `/draft-skip` | Force-skip current pick (stays claimable) |
+| `/draft-skip-accel` | Enable/disable short clock + auto-skip for teams that already have skips |
 | `/draft-undo` | Undo last recorded pick |
 | `/draft-set-pick` | Force-assign player to a `round` + `pick` |
 | `/draft-for-team` | Submit a pick for a team (on clock or open skip) |

@@ -12,5 +12,6 @@
   "sleepEnabled": false,
   "sleepStart": "22:00",
   "sleepEnd": "08:00",
-  "sleepTimezone": "America/Los_Angeles"
+  "sleepTimezone": "America/Los_Angeles",
+  "skipAccelEnabled": true
 }

@@ -37,6 +37,13 @@ module.exports = {
         .setName('allow_edit_picks')
         .setDescription('Allow managers to replace their own picks with available players'),
     )
+    .addBooleanOption((o) =>
+      o
+        .setName('skip_accel')
+        .setDescription(
+          'Short clock / auto-skip when a team already has open skips (default on)',
+        ),
+    )
     .addIntegerOption((o) =>
       o
         .setName('team_count')
@@ -64,6 +71,7 @@ module.exports = {
     const snake = interaction.options.getBoolean('snake');
     const allowDup = interaction.options.getBoolean('allow_duplicate_owners');
     const allowEditPicks = interaction.options.getBoolean('allow_edit_picks');
+    const skipAccel = interaction.options.getBoolean('skip_accel');
     const teamCount = interaction.options.getInteger('team_count');
     const addAdmin = interaction.options.getUser('add_admin');
     const removeAdmin = interaction.options.getUser('remove_admin');
@@ -76,6 +84,7 @@ module.exports = {
     if (snake != null) partial.snake = snake;
     if (allowDup != null) partial.allowDuplicateOwners = allowDup;
     if (allowEditPicks != null) partial.allowEditPicks = allowEditPicks;
+    if (skipAccel != null) partial.skipAccelEnabled = skipAccel;
 
     const { loadConfig, normalizePickWarnings } = require('../config');
     const { loadOrder, saveOrder, resizeTeams } = require('../draft/order');
@@ -171,6 +180,7 @@ module.exports = {
         `• Snake: **${config.snake}**`,
         `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
         `• Allow edit picks: **${config.allowEditPicks}**`,
+        `• Skip accel (¼ clock / auto-skip inactives): **${config.skipAccelEnabled}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
         warnNote,

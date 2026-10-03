@@ -17,6 +17,8 @@ const DEFAULTS = {
   sleepStart: '22:00',
   sleepEnd: '08:00',
   sleepTimezone: 'America/Los_Angeles',
+  /** 1 open skip → 1/4 clock; 2+ open skips → skip immediately. Autodraft still goes first. */
+  skipAccelEnabled: true,
 };
 
 function ensureConfigFile() {
@@ -32,6 +34,7 @@ function loadConfig() {
   ensureConfigFile();
   const raw = JSON.parse(fs.readFileSync(paths.CONFIG_JSON, 'utf8'));
   const merged = { ...DEFAULTS, ...raw, adminUserIds: [...(raw.adminUserIds || [])] };
+  merged.skipAccelEnabled = merged.skipAccelEnabled !== false;
   merged.pickWarningsSec = normalizePickWarnings(
     merged.pickWarningsSec,
     merged.secondsPerPick,

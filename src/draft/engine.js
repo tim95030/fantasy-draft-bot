@@ -100,6 +100,60 @@ class DraftEngine {
     return state.skipped.some((s) => s.round === round && s.pick === pick);
   }
 
+  /**
+   * Open skips already on this fantasy team, excluding the on-clock slot.
+   */
+  sameTeamOpenSkipCount(state, slot) {
+    if (!slot || !Array.isArray(state.skipped)) return 0;
+    const teamIndex =
+      Number.isInteger(slot.teamIndex) && slot.teamIndex >= 0 ? Number(slot.teamIndex) : null;
+    const owners = new Set(
+      [
+        ...(Array.isArray(slot.ownerIds) ? slot.ownerIds.map(String) : []),
+        slot.discordUserId != null ? String(slot.discordUserId) : '',
+      ].filter(Boolean),
+    );
+    return state.skipped.filter((s) => {
+      if (this.isFilled(state, s.round, s.pick)) return false;
+      if (Number(s.round) === Number(slot.round) && Number(s.pick) === Number(slot.pick)) {
+        return false;
+      }
+      if (teamIndex != null && Number.isInteger(s.teamIndex)) {
+        return Number(s.teamIndex) === teamIndex;
+      }
+      const skipOwners = [
+        ...(Array.isArray(s.ownerIds) ? s.ownerIds.map(String) : []),
+        s.discordUserId != null ? String(s.discordUserId) : '',
+      ];
+      return skipOwners.some((id) => owners.has(id));
+    }).length;
+  }
+
+  clockMsForSlot(state, slot, remainingMs = null) {
+    const config = this.getConfig();
+    const fullMs = Math.max(1, config.secondsPerPick) * 1000;
+    if (remainingMs != null && remainingMs > 0) return remainingMs;
+    if (config.skipAccelEnabled && this.sameTeamOpenSkipCount(state, slot) >= 1) {
+      return Math.max(1000, Math.floor(fullMs / 4));
+    }
+    return fullMs;
+  }
+
+  pushSkipRecord(state, slot) {
+    if (this.isSkipped(state, slot.round, slot.pick)) return;
+    state.skipped.push({
+      round: slot.round,
+      pick: slot.pick,
+      discordUserId: slot.discordUserId,
+      ownerIds: slot.ownerIds || [slot.discordUserId],
+      teamIndex: slot.teamIndex,
+      teamName: slot.teamName || slot.displayName,
+      displayName: slot.displayName,
+      overallIndex: slot.overallIndex,
+      skippedAt: new Date().toISOString(),
+    });
+  }
+
   openSkipsForUser(state, discordUserId) {
     const id = String(discordUserId);
     return state.skipped
@@ -284,10 +338,16 @@ class DraftEngine {
     const config = this.getConfig();
     const secondsLeft = state.clockEndsAt
       ? (state.clockEndsAt - Date.now()) / 1000
-      : config.secondsPerPick;
+      : state.sleepRemainingMs != null
+        ? state.sleepRemainingMs / 1000
+        : this.clockMsForSlot(state, slot) / 1000;
 
+    const shortClock =
+      config.skipAccelEnabled && this.sameTeamOpenSkipCount(state, slot) >= 1;
     await channel.send({
-      content: `${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** is on the clock.`,
+      content:
+        `${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** is on the clock.` +
+        (shortClock ? ' _(short clock — already has a skip)_' : ''),
       embeds: [this.onClockEmbed(slot, state, secondsLeft)],
     });
   }
@@ -339,9 +399,7 @@ class DraftEngine {
       return;
     }
 
-    const fullMs = Math.max(1, config.secondsPerPick) * 1000;
-    const ms =
-      remainingMs != null && remainingMs > 0 ? remainingMs : fullMs;
+    const ms = this.clockMsForSlot(state, slot, remainingMs);
 
     // Quiet hours: keep picks open, but do not run the countdown
     if (isInSleepWindow(config)) {
@@ -401,8 +459,22 @@ class DraftEngine {
       }
 
       const autoResult = this.tryAutoDraftOnce(slot);
-      if (!autoResult) break;
-      await this.announceAutodraft(autoResult);
+      if (autoResult) {
+        await this.announceAutodraft(autoResult);
+        continue;
+      }
+
+      const config = this.getConfig();
+      if (config.skipAccelEnabled) {
+        const live = this.getState();
+        const current = this.currentSlot(live) || slot;
+        const openSkips = this.sameTeamOpenSkipCount(live, current);
+        if (openSkips >= 2) {
+          await this.skipForRepeatInactivity(live, current, openSkips);
+          continue;
+        }
+      }
+      break;
     }
 
     this.startClock(this.getState(), { remainingMs });
@@ -511,6 +583,29 @@ class DraftEngine {
     );
   }
 
+  async skipForRepeatInactivity(state, slot, openSkips) {
+    this.pushSkipRecord(state, slot);
+    state.currentIndex += 1;
+    this.persist(state);
+    audit('skip', {
+      reason: 'repeat_skips',
+      openSkips,
+      round: slot.round,
+      pick: slot.pick,
+      teamIndex: slot.teamIndex,
+      teamName: slot.teamName || slot.displayName,
+      discordUserId: slot.discordUserId,
+    });
+    const channel = await this.getDraftChannel();
+    if (channel) {
+      const team = slot.teamName || slot.displayName;
+      await channel.send(
+        `**${team}** (${mentionOwners(slot)}) already has **${openSkips}** open skips — ` +
+          `**${slot.round}.${slot.pick}** marked **skipped**. Catch-up still allowed.`,
+      );
+    }
+  }
+
   async handleTimeout() {
     const state = this.getState();
     if (state.status !== 'running') return;
@@ -531,19 +626,7 @@ class DraftEngine {
       return;
     }
 
-    if (!this.isSkipped(state, slot.round, slot.pick)) {
-      state.skipped.push({
-        round: slot.round,
-        pick: slot.pick,
-        discordUserId: slot.discordUserId,
-        ownerIds: slot.ownerIds || [slot.discordUserId],
-        teamIndex: slot.teamIndex,
-        teamName: slot.teamName || slot.displayName,
-        displayName: slot.displayName,
-        overallIndex: slot.overallIndex,
-        skippedAt: new Date().toISOString(),
-      });
-    }
+    this.pushSkipRecord(state, slot);
 
     const channel = await this.getDraftChannel();
     if (channel) {
@@ -770,19 +853,7 @@ class DraftEngine {
     if (!slot) throw new Error('No current slot.');
     if (this.isFilled(state, slot.round, slot.pick)) throw new Error('Current slot already filled.');
 
-    if (!this.isSkipped(state, slot.round, slot.pick)) {
-      state.skipped.push({
-        round: slot.round,
-        pick: slot.pick,
-        discordUserId: slot.discordUserId,
-        ownerIds: slot.ownerIds || [slot.discordUserId],
-        teamIndex: slot.teamIndex,
-        teamName: slot.teamName || slot.displayName,
-        displayName: slot.displayName,
-        overallIndex: slot.overallIndex,
-        skippedAt: new Date().toISOString(),
-      });
-    }
+    this.pushSkipRecord(state, slot);
     state.currentIndex += 1;
     this.persist(state);
     audit('skip', {
