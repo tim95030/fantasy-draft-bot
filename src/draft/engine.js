@@ -393,12 +393,10 @@ class DraftEngine {
 
     const shortClock =
       config.skipAccelEnabled && this.sameTeamOpenSkipCount(state, slot) >= 1;
-    const skipBlock = this.formatOpenSkipsByTeam(state);
     await channel.send({
       content:
         `${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** is on the clock.` +
-        (shortClock ? ' _(short clock — already has a skip)_' : '') +
-        (skipBlock !== 'None' ? `\n${skipBlock}` : ''),
+        (shortClock ? ' _(short clock — already has a skip)_' : ''),
       embeds: [this.onClockEmbed(slot, state, secondsLeft)],
     });
   }
