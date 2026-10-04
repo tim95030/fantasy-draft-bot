@@ -224,6 +224,65 @@ class DraftEngine {
     return null;
   }
 
+  /**
+   * Group open skips by team: `Utah Mammoth — 3 skips (33.4, 34.28, 35.4)`
+   */
+  formatOpenSkipsByTeam(state) {
+    const skips = (state.skipped || []).filter((s) => !this.isFilled(state, s.round, s.pick));
+    if (!skips.length) return 'None';
+
+    const groups = new Map();
+    for (const s of skips) {
+      const key =
+        Number.isInteger(s.teamIndex) && s.teamIndex >= 0
+          ? `i:${s.teamIndex}`
+          : `n:${String(s.teamName || s.displayName || 'Unknown').toLowerCase()}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          teamName: s.teamName || s.displayName || 'Unknown',
+          earliest: this.slotSortKey(s),
+          slots: [],
+        });
+      }
+      const g = groups.get(key);
+      g.slots.push(s);
+      g.earliest = Math.min(g.earliest, this.slotSortKey(s));
+    }
+
+    const lines = [...groups.values()]
+      .sort((a, b) => a.earliest - b.earliest)
+      .map((g) => {
+        const slots = g.slots.sort((a, b) => this.slotSortKey(a) - this.slotSortKey(b));
+        const n = slots.length;
+        const rounds = slots.map((s) => `${s.round}.${s.pick}`).join(', ');
+        const ownerIds = [
+          ...new Set(
+            slots.flatMap((s) => {
+              const ids = Array.isArray(s.ownerIds) ? s.ownerIds.map(String) : [];
+              if (s.discordUserId) ids.push(String(s.discordUserId));
+              return ids;
+            }),
+          ),
+        ];
+        const pings = mentionOwners({ ownerIds, discordUserId: ownerIds[0] });
+        return `${g.teamName} (${pings}) — ${n} skip${n === 1 ? '' : 's'} (${rounds})`;
+      });
+
+    const MAX = 1024;
+    let out = '';
+    let shown = 0;
+    for (const line of lines) {
+      const next = out ? `${out}\n${line}` : line;
+      if (next.length > MAX - 24) break;
+      out = next;
+      shown += 1;
+    }
+    if (shown < lines.length) {
+      out += `\n…+${lines.length - shown} more teams`;
+    }
+    return out || 'None';
+  }
+
   findSkip(state, round, pick) {
     return state.skipped.find((s) => s.round === round && s.pick === pick);
   }
@@ -253,7 +312,6 @@ class DraftEngine {
   }
 
   onClockEmbed(slot, state, secondsLeft) {
-    const skips = state.skipped.filter((s) => !this.isFilled(state, s.round, s.pick));
     const owners = mentionOwners(slot);
     const config = this.getConfig();
     const sleeping = state.sleepPaused || isInSleepWindow(config);
@@ -304,16 +362,7 @@ class DraftEngine {
         },
         {
           name: 'Open skips',
-          value:
-            skips.length === 0
-              ? 'None'
-              : skips
-                  .slice(0, 15)
-                  .map(
-                    (s) =>
-                      `${s.round}.${s.pick} ${s.teamName || s.displayName || ''} ${mentionOwners(s)}`,
-                  )
-                  .join('\n') + (skips.length > 15 ? `\n…+${skips.length - 15} more` : ''),
+          value: this.formatOpenSkipsByTeam(state),
         },
         {
           name: 'How to pick',
@@ -344,10 +393,12 @@ class DraftEngine {
 
     const shortClock =
       config.skipAccelEnabled && this.sameTeamOpenSkipCount(state, slot) >= 1;
+    const skipBlock = this.formatOpenSkipsByTeam(state);
     await channel.send({
       content:
         `${mentionOwners(slot)} — **${slot.teamName || slot.displayName}** is on the clock.` +
-        (shortClock ? ' _(short clock — already has a skip)_' : ''),
+        (shortClock ? ' _(short clock — already has a skip)_' : '') +
+        (skipBlock !== 'None' ? `\n${skipBlock}` : ''),
       embeds: [this.onClockEmbed(slot, state, secondsLeft)],
     });
   }

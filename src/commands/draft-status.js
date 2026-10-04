@@ -9,7 +9,7 @@ module.exports = {
     .setDescription('Show who is on the clock, timer, and open skips'),
 
   async execute(interaction) {
-    const { state, slot, secondsLeft, openSkips, sleeping, sleepLabel, wakeLabel } =
+    const { state, slot, secondsLeft, sleeping, sleepLabel, wakeLabel } =
       engine.statusSummary();
     const embed = new EmbedBuilder()
       .setTitle('Draft status')
@@ -50,17 +50,7 @@ module.exports = {
         },
         {
           name: 'Open skips',
-          value:
-            openSkips.length === 0
-              ? 'None'
-              : openSkips
-                  .slice(0, 20)
-                  .map(
-                    (s) =>
-                      `${s.round}.${s.pick} ${s.teamName || s.displayName || ''} ${mentionOwners(s)}`,
-                  )
-                  .join('\n') +
-                (openSkips.length > 20 ? `\n…+${openSkips.length - 20} more` : ''),
+          value: engine.formatOpenSkipsByTeam(state),
         },
       );
 
