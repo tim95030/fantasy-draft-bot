@@ -66,6 +66,21 @@ Enabled by default. When a team comes **on the clock** (after autodraft has a ch
 
 Toggle: `/draft-skip-accel enable` / `disable` / `status`, or `/draft-setup skip_accel:False`.
 
+## Fantrax roster check
+
+Admins can compare Discord picks to live Fantrax team rosters (read-only API). Matching uses **fantraxId** (sheet `i…` prefix is normalized).
+
+```text
+/draft-fantrax check
+/draft-fantrax status
+/draft-fantrax test
+```
+
+- **Pending** — Discord pick not on any Fantrax roster yet
+- **Wrong team** — on a Fantrax roster, but not the Discord fantasy team
+
+Set `FANTRAX_LEAGUE_ID` in the host `.env` (no secret needed for public roster reads).
+
 Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids).
 
 ## Pick-clock warnings
@@ -458,6 +473,7 @@ When the timer expires, the pick is **skipped** (not voided). That manager can l
 | `/draft-end` | Stop the draft |
 | `/draft-skip` | Force-skip current pick (stays claimable) |
 | `/draft-skip-accel` | Enable/disable short clock + auto-skip for teams that already have skips |
+| `/draft-fantrax` | Compare Discord picks to Fantrax rosters (pending / wrong team) |
 | `/draft-undo` | Undo last recorded pick |
 | `/draft-set-pick` | Force-assign player to a `round` + `pick` |
 | `/draft-for-team` | Submit a pick for a team (on clock or open skip) |
