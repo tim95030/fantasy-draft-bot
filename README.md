@@ -68,7 +68,7 @@ Toggle: `/draft-skip-accel enable` / `disable` / `status`, or `/draft-setup skip
 
 ## Fantrax roster check
 
-Admins can compare Discord picks to live Fantrax team rosters (read-only API). Matching uses **fantraxId** (sheet `i…` prefix is normalized).
+Admins can compare Discord picks to live Fantrax team rosters (read-only API). Matching uses **fantraxId** (sheet `i…` prefix is normalized). Team names treat **Canadians** and **Canadiens** as the same spelling.
 
 ```text
 /draft-fantrax check

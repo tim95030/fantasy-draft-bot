@@ -24,7 +24,8 @@ function normalizeTeamName(name) {
   return String(name || '')
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, ' ')
+    .replace(/\bcanadians\b/g, 'canadiens');
 }
 
 function getLeagueId() {
