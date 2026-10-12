@@ -71,7 +71,7 @@ Toggle: `/draft-skip-accel enable` / `disable` / `status`, or `/draft-setup skip
 When the last regular slot is done and open skips remain, the draft enters a **make-up window** instead of ending (default **48h**, `/draft-setup makeup_hours`, `0` = end immediately).
 
 - Opening post lists **every** team with open skips (split across messages, never truncated) and pings their owners.
-- Every hour the bot reposts the full list with time left (names shown, no pings).
+- Every hour the bot reposts the full list with time left (names shown, no pings). Reminders that land in sleep hours are skipped; the deadline keeps counting.
 - Owners fill skips with `/draft-player` (oldest skip first); admins can use `/draft-for-team`.
 - The window closes when all skips are filled, at the deadline, or via `/draft-end` / `/draft-makeup end`. Unfilled skips are listed when it closes.
 - `/draft-makeup status` shows the full list privately; `/draft-makeup start hours:N` opens a window on a draft that already ended.

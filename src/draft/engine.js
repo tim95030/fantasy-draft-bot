@@ -659,6 +659,10 @@ class DraftEngine {
       await this.finishMakeup('all_filled');
       return;
     }
+    if (isInSleepWindow(this.getConfig())) {
+      audit('makeup.reminder_skipped', { reason: 'sleep_hours' });
+      return;
+    }
     await this.announceMakeup('reminder');
   }
 
