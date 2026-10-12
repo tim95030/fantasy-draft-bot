@@ -56,7 +56,7 @@ module.exports = {
     if (!config.draftChannelId || message.channelId !== config.draftChannelId) return;
 
     const state = engine.getState();
-    if (state.status !== 'running' && state.status !== 'paused') return;
+    if (!['running', 'paused', 'makeup'].includes(state.status)) return;
 
     const text = String(message.content || '').trim();
     const parsed = parsePickMessage(text);
@@ -126,9 +126,7 @@ module.exports = {
           (result.pickRecord.catchUp ? ' _(catch-up skip)_' : ''),
       );
 
-      if (result.wasCurrent && result.state.status === 'running') {
-        await engine.proceedToNextPick();
-      }
+      await engine.afterPick(result);
     } catch (err) {
       const suggestions = pool.suggest(parsed.playerName, {
         availableOnly: true,

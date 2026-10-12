@@ -11,6 +11,15 @@ module.exports = {
   async execute(interaction) {
     const { state, slot, secondsLeft, sleeping, sleepLabel, wakeLabel } =
       engine.statusSummary();
+    if (state.status === 'makeup') {
+      const [first, ...rest] = engine.makeupMessages(state, 'status');
+      const silent = { parse: [] };
+      await interaction.reply({ content: first, ephemeral: true, allowedMentions: silent });
+      for (const content of rest) {
+        await interaction.followUp({ content, ephemeral: true, allowedMentions: silent });
+      }
+      return;
+    }
     const embed = new EmbedBuilder()
       .setTitle('Draft status')
       .setColor(state.status === 'running' ? (sleeping ? 0x6e7681 : 0x1f6feb) : 0x6e7681)

@@ -19,6 +19,8 @@ const DEFAULTS = {
   sleepTimezone: 'America/Los_Angeles',
   /** 1 open skip → 1/4 clock; 2+ open skips → skip immediately. Autodraft still goes first. */
   skipAccelEnabled: true,
+  /** Hours teams get to fill open skips after the last round. 0 = end immediately. */
+  makeupHours: 48,
 };
 
 function ensureConfigFile() {

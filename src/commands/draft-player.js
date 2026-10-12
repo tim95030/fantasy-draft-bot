@@ -53,6 +53,12 @@ module.exports = {
     } else if (current) {
       round = current.round;
       pick = current.pick;
+    } else if (state.status === 'makeup') {
+      await interaction.reply({
+        content: 'Your team has no open skipped picks left to make up.',
+        ephemeral: true,
+      });
+      return;
     } else {
       const config = engine.getConfig();
       round = config.startRound;
@@ -78,9 +84,7 @@ module.exports = {
           (result.pickRecord.catchUp ? ' _(catch-up skip)_' : ''),
       );
 
-      if (result.wasCurrent && result.state.status === 'running') {
-        await engine.proceedToNextPick();
-      }
+      await engine.afterPick(result);
     } catch (err) {
       await interaction.reply({
         content: `${err.message}\n\nFormatted pick (copy/paste when ready):\n\`${line}\``,

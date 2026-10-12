@@ -46,6 +46,13 @@ module.exports = {
     )
     .addIntegerOption((o) =>
       o
+        .setName('makeup_hours')
+        .setDescription('Hours to make up skipped picks after the last round (default 48, 0 = off)')
+        .setMinValue(0)
+        .setMaxValue(336),
+    )
+    .addIntegerOption((o) =>
+      o
         .setName('team_count')
         .setDescription('Resize team slots now (1–64). Only when draft is not running.')
         .setMinValue(1)
@@ -72,6 +79,7 @@ module.exports = {
     const allowDup = interaction.options.getBoolean('allow_duplicate_owners');
     const allowEditPicks = interaction.options.getBoolean('allow_edit_picks');
     const skipAccel = interaction.options.getBoolean('skip_accel');
+    const makeupHours = interaction.options.getInteger('makeup_hours');
     const teamCount = interaction.options.getInteger('team_count');
     const addAdmin = interaction.options.getUser('add_admin');
     const removeAdmin = interaction.options.getUser('remove_admin');
@@ -85,6 +93,7 @@ module.exports = {
     if (allowDup != null) partial.allowDuplicateOwners = allowDup;
     if (allowEditPicks != null) partial.allowEditPicks = allowEditPicks;
     if (skipAccel != null) partial.skipAccelEnabled = skipAccel;
+    if (makeupHours != null) partial.makeupHours = makeupHours;
 
     const { loadConfig, normalizePickWarnings } = require('../config');
     const { loadOrder, saveOrder, resizeTeams } = require('../draft/order');
@@ -156,6 +165,15 @@ module.exports = {
       }
     }
 
+    let makeupNote = '';
+    if (makeupHours != null && makeupHours > 0 && engine.getState().status === 'makeup') {
+      const updated = await engine.setMakeupHours(makeupHours);
+      makeupNote =
+        updated?.status === 'makeup'
+          ? `\n• Live make-up window now closes <t:${Math.floor(updated.makeupEndsAt / 1000)}:F>.`
+          : '\n• New length is already past — make-up window closed.';
+    }
+
     let announceNote = '';
     if (channel && !queueNote) {
       const state = engine.getState();
@@ -181,10 +199,12 @@ module.exports = {
         `• Allow duplicate owners: **${config.allowDuplicateOwners}**`,
         `• Allow edit picks: **${config.allowEditPicks}**`,
         `• Skip accel (¼ clock / auto-skip inactives): **${config.skipAccelEnabled}**`,
+        `• Make-up window: **${config.makeupHours > 0 ? `${config.makeupHours}h` : 'off'}**`,
         `• Admins: ${config.adminUserIds.map((id) => `<@${id}>`).join(', ') || '_none_'}`,
         sizeNote,
         warnNote,
         queueNote,
+        makeupNote,
         announceNote,
       ]
         .filter(Boolean)

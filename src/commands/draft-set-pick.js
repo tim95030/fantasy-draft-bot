@@ -61,9 +61,7 @@ module.exports = {
       } else if (channel) {
         // already replied in channel via editReply if same channel — also announce next if needed
       }
-      if (result.wasCurrent && result.state.status === 'running') {
-        await engine.proceedToNextPick();
-      }
+      await engine.afterPick(result);
     } catch (err) {
       await interaction.editReply(err.message);
     }

@@ -163,9 +163,7 @@ module.exports = {
           (result.pickRecord.catchUp ? ' _(catch-up skip)_' : ''),
       );
 
-      if (result.wasCurrent && result.state.status === 'running') {
-        await engine.proceedToNextPick();
-      }
+      await engine.afterPick(result);
     } catch (err) {
       await interaction.reply({
         content: `${err.message}\n\nFormatted pick:\n\`${line}\``,

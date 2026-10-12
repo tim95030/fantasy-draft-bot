@@ -26,6 +26,36 @@ const {
   formatInZone,
 } = require('./sleepHours');
 
+const HOUR_MS = 3_600_000;
+const MAKEUP_REMINDER_MS = HOUR_MS;
+const DISCORD_CHUNK = 1900;
+
+function chunkLines(lines) {
+  const chunks = [];
+  let buf = '';
+  for (const line of lines) {
+    const next = buf ? `${buf}\n${line}` : line;
+    if (next.length > DISCORD_CHUNK && buf) {
+      chunks.push(buf);
+      buf = line;
+    } else {
+      buf = next;
+    }
+  }
+  if (buf.trim()) chunks.push(buf);
+  return chunks;
+}
+
+/** `47h 59m`, `3h`, `12m` — minute precision for long windows. */
+function formatTimeLeft(ms) {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
 class DraftEngine {
   constructor() {
     this.timer = new DraftTimer();
@@ -58,6 +88,7 @@ class DraftEngine {
     if (
       state.status !== 'running' &&
       state.status !== 'paused' &&
+      state.status !== 'makeup' &&
       state.status !== 'ended'
     ) {
       return false;
@@ -224,12 +255,38 @@ class DraftEngine {
     return null;
   }
 
+  openSkips(state) {
+    return (state.skipped || [])
+      .filter((s) => !this.isFilled(state, s.round, s.pick))
+      .sort((a, b) => this.slotSortKey(a) - this.slotSortKey(b));
+  }
+
   /**
    * Group open skips by team: `Utah Mammoth — 3 skips (33.4, 34.28, 35.4)`
    */
   formatOpenSkipsByTeam(state) {
-    const skips = (state.skipped || []).filter((s) => !this.isFilled(state, s.round, s.pick));
-    if (!skips.length) return 'None';
+    const lines = this.openSkipTeamLines(state);
+    if (!lines.length) return 'None';
+
+    const MAX = 1024;
+    let out = '';
+    let shown = 0;
+    for (const line of lines) {
+      const next = out ? `${out}\n${line}` : line;
+      if (next.length > MAX - 24) break;
+      out = next;
+      shown += 1;
+    }
+    if (shown < lines.length) {
+      out += `\n…+${lines.length - shown} more teams`;
+    }
+    return out || 'None';
+  }
+
+  /** One line per team with open skips, earliest skip first. Never truncated. */
+  openSkipTeamLines(state) {
+    const skips = this.openSkips(state);
+    if (!skips.length) return [];
 
     const groups = new Map();
     for (const s of skips) {
@@ -249,7 +306,7 @@ class DraftEngine {
       g.earliest = Math.min(g.earliest, this.slotSortKey(s));
     }
 
-    const lines = [...groups.values()]
+    return [...groups.values()]
       .sort((a, b) => a.earliest - b.earliest)
       .map((g) => {
         const slots = g.slots.sort((a, b) => this.slotSortKey(a) - this.slotSortKey(b));
@@ -267,20 +324,6 @@ class DraftEngine {
         const pings = mentionOwners({ ownerIds, discordUserId: ownerIds[0] });
         return `${g.teamName} (${pings}) — ${n} skip${n === 1 ? '' : 's'} (${rounds})`;
       });
-
-    const MAX = 1024;
-    let out = '';
-    let shown = 0;
-    for (const line of lines) {
-      const next = out ? `${out}\n${line}` : line;
-      if (next.length > MAX - 24) break;
-      out = next;
-      shown += 1;
-    }
-    if (shown < lines.length) {
-      out += `\n…+${lines.length - shown} more teams`;
-    }
-    return out || 'None';
   }
 
   findSkip(state, round, pick) {
@@ -438,13 +481,9 @@ class DraftEngine {
 
     const slot = this.advanceToNextOpen(state);
     if (!slot) {
-      state.status = 'ended';
-      state.clockEndsAt = null;
-      state.sleepPaused = false;
-      state.sleepRemainingMs = null;
-      this.timer.clear();
-      this.persist(state);
-      this.getDraftChannel().then((ch) => ch?.send('Draft complete — all slots filled.'));
+      this.onQueueExhausted(state).catch((err) =>
+        console.error('Queue exhausted handling failed:', err),
+      );
       return;
     }
 
@@ -496,14 +535,7 @@ class DraftEngine {
       if (state.currentIndex !== indexBefore) this.persist(state);
 
       if (!slot) {
-        state.status = 'ended';
-        state.clockEndsAt = null;
-        state.sleepPaused = false;
-        state.sleepRemainingMs = null;
-        this.timer.clear();
-        this.persist(state);
-        const channel = await this.getDraftChannel();
-        if (channel) await channel.send('Draft complete — all slots filled.');
+        await this.onQueueExhausted(state);
         return this.getState();
       }
 
@@ -531,6 +563,210 @@ class DraftEngine {
       await this.announceOnClock(this.getState());
     }
     return this.getState();
+  }
+
+  /**
+   * Regular order is used up: open skips get a make-up window, otherwise done.
+   */
+  async onQueueExhausted(state = this.getState()) {
+    if (state.status !== 'running') return;
+    state.clockEndsAt = null;
+    state.sleepPaused = false;
+    state.sleepRemainingMs = null;
+    this.timer.clear();
+
+    const openCount = this.openSkips(state).length;
+    if (openCount && Number(this.getConfig().makeupHours) > 0) {
+      await this.enterMakeup(state);
+      return;
+    }
+
+    state.status = 'ended';
+    this.persist(state);
+    audit('draft.complete', { openSkips: openCount });
+    const channel = await this.getDraftChannel();
+    if (channel) {
+      await channel.send(
+        openCount
+          ? `Draft complete — regular rounds finished with **${openCount}** open skips.`
+          : 'Draft complete — all slots filled.',
+      );
+    }
+  }
+
+  async enterMakeup(state = this.getState(), { hours = null } = {}) {
+    const h = hours != null ? Number(hours) : Number(this.getConfig().makeupHours);
+    if (!(h > 0)) throw new Error('Make-up window must be longer than 0 hours.');
+
+    const now = Date.now();
+    this.timer.clear();
+    state.status = 'makeup';
+    state.clockEndsAt = null;
+    state.sleepPaused = false;
+    state.sleepRemainingMs = null;
+    state.makeupStartedAt = now;
+    state.makeupEndsAt = now + h * HOUR_MS;
+    state.makeupLastReminderAt = now;
+    this.persist(state);
+
+    const openCount = this.openSkips(state).length;
+    audit('makeup.start', {
+      hours: h,
+      endsAt: new Date(state.makeupEndsAt).toISOString(),
+      openSkips: openCount,
+    });
+    if (!openCount) return this.finishMakeup('all_filled');
+
+    await this.announceMakeup('start');
+    this.scheduleMakeup();
+    return this.getState();
+  }
+
+  /** Arm the next hourly reminder, or the deadline if it comes first. */
+  scheduleMakeup() {
+    if (this._makeupTimer) clearTimeout(this._makeupTimer);
+    this._makeupTimer = null;
+
+    const state = this.getState();
+    if (state.status !== 'makeup' || !state.makeupEndsAt) return;
+
+    const now = Date.now();
+    const nextReminder =
+      (state.makeupLastReminderAt || state.makeupStartedAt || now) + MAKEUP_REMINDER_MS;
+    const atDeadline = nextReminder >= state.makeupEndsAt;
+    const fireAt = atDeadline ? state.makeupEndsAt : nextReminder;
+
+    this._makeupTimer = setTimeout(() => {
+      this._makeupTimer = null;
+      if (atDeadline) {
+        this.finishMakeup('deadline').catch((err) =>
+          console.error('Make-up deadline failed:', err),
+        );
+        return;
+      }
+      this.postMakeupReminder()
+        .catch((err) => console.error('Make-up reminder failed:', err))
+        .finally(() => this.scheduleMakeup());
+    }, Math.max(0, fireAt - now));
+  }
+
+  async postMakeupReminder() {
+    const state = this.getState();
+    if (state.status !== 'makeup') return;
+    state.makeupLastReminderAt = Date.now();
+    this.persist(state);
+    if (!this.openSkips(state).length) {
+      await this.finishMakeup('all_filled');
+      return;
+    }
+    await this.announceMakeup('reminder');
+  }
+
+  /**
+   * Full make-up board split into Discord-sized messages. Lists every team
+   * with open skips — nothing is truncated.
+   */
+  makeupMessages(state, kind) {
+    const skips = this.openSkips(state);
+    const lines = this.openSkipTeamLines(state);
+    const unix = Math.floor(state.makeupEndsAt / 1000);
+    const left = formatTimeLeft(state.makeupEndsAt - Date.now());
+    const closes = `closes <t:${unix}:F> (<t:${unix}:R>)`;
+
+    const header =
+      kind === 'start'
+        ? [
+            '🏁 **Regular rounds are done — the make-up window is open.**',
+            `Teams with skipped picks have **${left}** to make them up — ${closes}.`,
+          ]
+        : [`⏳ **Make-up window: ${left} left** — ${closes}.`];
+
+    return chunkLines([
+      ...header,
+      `**${skips.length}** open pick${skips.length === 1 ? '' : 's'} across **${lines.length}** team${lines.length === 1 ? '' : 's'}:`,
+      '',
+      ...lines,
+      '',
+      'Use `/draft-player` to fill your oldest skipped pick — repeat for each one.',
+    ]);
+  }
+
+  /** Opening announcement pings owners; hourly reminders render names silently. */
+  async announceMakeup(kind) {
+    const channel = await this.getDraftChannel();
+    if (!channel) return;
+    const state = this.getState();
+    this.syncTeamsFromOrder(state);
+    const allowedMentions = kind === 'start' ? { parse: ['users'] } : { parse: [] };
+    for (const content of this.makeupMessages(state, kind)) {
+      await channel.send({ content, allowedMentions });
+    }
+  }
+
+  async finishMakeup(reason) {
+    if (this._makeupTimer) clearTimeout(this._makeupTimer);
+    this._makeupTimer = null;
+
+    const state = this.getState();
+    if (state.status !== 'makeup') return state;
+
+    const unfilled = this.openSkips(state);
+    state.status = 'ended';
+    state.makeupEndedAt = Date.now();
+    state.makeupEndReason = reason;
+    this.persist(state);
+    pool.saveToFile();
+    audit('makeup.end', { reason, unfilled: unfilled.length });
+
+    const channel = await this.getDraftChannel();
+    if (!channel) return this.getState();
+
+    const head = {
+      all_filled: '✅ **All make-up picks are in — the draft is complete.**',
+      deadline: '⏰ **The make-up window has closed — the draft is complete.**',
+      admin: '🛑 **An admin ended the make-up window — the draft is complete.**',
+    }[reason] || '**The draft is complete.**';
+    const lines = [head];
+    if (unfilled.length) {
+      lines.push(
+        `**${unfilled.length}** skipped pick${unfilled.length === 1 ? ' was' : 's were'} not made up:`,
+        '',
+        ...this.openSkipTeamLines(state),
+      );
+    }
+    for (const content of chunkLines(lines)) {
+      await channel.send({ content, allowedMentions: { parse: [] } });
+    }
+    return this.getState();
+  }
+
+  async checkMakeupComplete() {
+    const state = this.getState();
+    if (state.status === 'makeup' && !this.openSkips(state).length) {
+      await this.finishMakeup('all_filled');
+    }
+  }
+
+  /** Change the window length (measured from when it opened). */
+  async setMakeupHours(hours) {
+    const state = this.getState();
+    if (state.status !== 'makeup') return null;
+    state.makeupEndsAt = state.makeupStartedAt + Number(hours) * HOUR_MS;
+    this.persist(state);
+    audit('makeup.length', { hours, endsAt: new Date(state.makeupEndsAt).toISOString() });
+    if (Date.now() >= state.makeupEndsAt) return this.finishMakeup('deadline');
+    this.scheduleMakeup();
+    return this.getState();
+  }
+
+  /** Callers run this after posting a recorded pick. */
+  async afterPick(result) {
+    const { status } = this.getState();
+    if (result.wasCurrent && status === 'running') {
+      await this.proceedToNextPick();
+    } else if (status === 'makeup') {
+      await this.checkMakeupComplete();
+    }
   }
 
   /**
@@ -887,6 +1123,8 @@ class DraftEngine {
     state.status = 'ended';
     state.clockEndsAt = null;
     this.timer.clear();
+    if (this._makeupTimer) clearTimeout(this._makeupTimer);
+    this._makeupTimer = null;
     this.persist(state);
     pool.saveToFile();
     audit('draft.end', {});
@@ -929,7 +1167,9 @@ class DraftEngine {
     source = 'message',
   }) {
     const state = this.getState();
-    if (state.status !== 'running' && state.status !== 'paused' && !adminOverride) {
+    const active =
+      state.status === 'running' || state.status === 'paused' || state.status === 'makeup';
+    if (!active && !adminOverride) {
       throw new Error('Draft is not active.');
     }
 
@@ -1074,7 +1314,7 @@ class DraftEngine {
     }
 
     const state = this.getState();
-    if (state.status !== 'running' && state.status !== 'paused' && state.status !== 'ended') {
+    if (!['running', 'paused', 'makeup', 'ended'].includes(state.status)) {
       throw new Error('No draft picks to edit yet.');
     }
 
@@ -1153,9 +1393,11 @@ class DraftEngine {
     pool.markTaken(last.fantraxId, false);
     pool.saveToFile();
 
-    // If we undid the slot at or before current, move pointer back to that slot if it is earlier
     const idx = state.queue.findIndex((s) => s.round === last.round && s.pick === last.pick);
-    if (idx >= 0 && idx <= state.currentIndex) {
+    if (state.status === 'makeup') {
+      if (idx >= 0) this.pushSkipRecord(state, state.queue[idx]);
+    } else if (idx >= 0 && idx <= state.currentIndex) {
+      // If we undid the slot at or before current, move pointer back to that slot if it is earlier
       state.currentIndex = idx;
     }
 
@@ -1323,6 +1565,14 @@ class DraftEngine {
 
   resumeTimerIfNeeded() {
     const state = this.getState();
+    if (state.status === 'makeup') {
+      if (state.makeupEndsAt) {
+        this.scheduleMakeup();
+      } else {
+        this.enterMakeup(state).catch((err) => console.error('Make-up start failed:', err));
+      }
+      return;
+    }
     if (state.status !== 'running') return;
 
     if (isInSleepWindow(this.getConfig())) {

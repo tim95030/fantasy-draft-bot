@@ -3,7 +3,7 @@ const paths = require('../paths');
 
 function emptyState() {
   return {
-    status: 'idle', // idle | running | paused | ended
+    status: 'idle', // idle | running | paused | makeup | ended
     startedAt: null,
     pausedAt: null,
     currentIndex: 0,
