@@ -21,6 +21,15 @@ const DEFAULTS = {
   skipAccelEnabled: true,
   /** Hours teams get to fill open skips after the last round. 0 = end immediately. */
   makeupHours: 48,
+  /** /nhl-add, /ahl-add, /drop-player. `practice` = only from + into practiceChannelId. */
+  transactions: {
+    mode: 'practice',
+    practiceChannelId: '1555323096226070558',
+    nhlAddsChannelId: '1549410654245625867',
+    ahlAddsChannelId: '1549410712793653308',
+    dropsChannelId: '1549410801960493136',
+    minBid: 850_000,
+  },
 };
 
 function ensureConfigFile() {
@@ -37,6 +46,7 @@ function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(paths.CONFIG_JSON, 'utf8'));
   const merged = { ...DEFAULTS, ...raw, adminUserIds: [...(raw.adminUserIds || [])] };
   merged.skipAccelEnabled = merged.skipAccelEnabled !== false;
+  merged.transactions = { ...DEFAULTS.transactions, ...(raw.transactions || {}) };
   merged.pickWarningsSec = normalizePickWarnings(
     merged.pickWarningsSec,
     merged.secondsPerPick,

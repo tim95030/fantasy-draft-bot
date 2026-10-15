@@ -10,6 +10,7 @@ data/draft-state.json
 data/preset-picks.csv
 data/player-queues.json
 data/audit.jsonl
+data/transactions.json
 *.log
 *.swp
 *.swo

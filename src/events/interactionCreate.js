@@ -1,7 +1,7 @@
 const { loadConfig } = require('../config');
 
 /** Commands allowed outside the draft channel (so setup remains reachable). */
-const CHANNEL_EXEMPT = new Set(['draft-setup']);
+const CHANNEL_EXEMPT = new Set(['draft-setup', 'nhl-add', 'ahl-add', 'drop-player']);
 
 function draftChannelGate(interaction) {
   if (CHANNEL_EXEMPT.has(interaction.commandName)) return null;

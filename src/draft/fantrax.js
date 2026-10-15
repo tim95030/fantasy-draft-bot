@@ -71,15 +71,32 @@ async function fetchRosterOwnership({ force = false } = {}) {
   const data = await fetchJson(url);
   const rosters = data.rosters && typeof data.rosters === 'object' ? data.rosters : {};
   const byPlayerId = new Map();
+  /** @type {Map<string, { id: string, teamName: string, contract: string, salary: number|null, status: string, position: string }>} */
+  const itemsById = new Map();
+  /** @type {Map<string, { teamId: string, teamName: string, items: any[] }>} */
+  const teams = new Map();
 
-  for (const roster of Object.values(rosters)) {
+  for (const [teamId, roster] of Object.entries(rosters)) {
     if (!roster || typeof roster !== 'object') continue;
     const teamName = String(roster.teamName || '').trim();
     const items = Array.isArray(roster.rosterItems) ? roster.rosterItems : [];
+    const team = { teamId, teamName, items: [] };
+    teams.set(teamId, team);
     for (const item of items) {
       const id = normalizeFantraxId(item?.id);
       if (!id || !teamName) continue;
       byPlayerId.set(id, teamName);
+      const salary = Number(item.salary);
+      const entry = {
+        id,
+        teamName,
+        contract: String(item.contract?.name || '').trim(),
+        salary: Number.isFinite(salary) && salary > 0 ? salary : null,
+        status: String(item.status || ''),
+        position: String(item.position || ''),
+      };
+      itemsById.set(id, entry);
+      team.items.push(entry);
     }
   }
 
@@ -87,11 +104,56 @@ async function fetchRosterOwnership({ force = false } = {}) {
     leagueId,
     period: data.period ?? null,
     byPlayerId,
+    itemsById,
+    teams,
     teamCount: Object.keys(rosters).length,
     playerCount: byPlayerId.size,
   };
   _cache = { leagueId, at: Date.now(), data: result };
   return result;
+}
+
+/** `"Smith, Joe"` → `"Joe Smith"`; names without a comma pass through. */
+function displayName(raw) {
+  const text = String(raw || '').trim();
+  const idx = text.indexOf(',');
+  if (idx < 0) return text;
+  const last = text.slice(0, idx).trim();
+  const first = text.slice(idx + 1).trim();
+  return first ? `${first} ${last}` : last;
+}
+
+/**
+ * Every NHL player Fantrax knows about (no login needed).
+ * @returns {Promise<Map<string, { id: string, name: string, team: string, position: string }>>}
+ */
+async function fetchPlayerDirectory() {
+  const data = await fetchJson('https://www.fantrax.com/fxea/general/getPlayerIds?sport=NHL');
+  const out = new Map();
+  for (const p of Object.values(data || {})) {
+    const id = normalizeFantraxId(p?.fantraxId);
+    if (!id) continue;
+    out.set(id, {
+      id,
+      name: displayName(p.name),
+      team: String(p.team || '').trim() || '(N/A)',
+      position: String(p.position || '').trim().replace(/^Default$/i, ''),
+    });
+  }
+  return out;
+}
+
+/** @returns {Promise<{ id: string, name: string }[]>} */
+async function fetchLeagueTeams() {
+  const leagueId = getLeagueId();
+  if (!leagueId) throw new Error('FANTRAX_LEAGUE_ID is not set in .env');
+  const data = await fetchJson(
+    `https://www.fantrax.com/fxea/general/getLeagueInfo?leagueId=${encodeURIComponent(leagueId)}`,
+  );
+  return Object.values(data.teamInfo || {}).map((t) => ({
+    id: String(t.id),
+    name: String(t.name || '').trim(),
+  }));
 }
 
 /**
@@ -155,7 +217,10 @@ module.exports = {
   sheetFantraxId,
   normalizeTeamName,
   getLeagueId,
+  displayName,
   fetchRosterOwnership,
+  fetchPlayerDirectory,
+  fetchLeagueTeams,
   diffPicksAgainstRosters,
   formatPickLine,
 };

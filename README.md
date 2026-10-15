@@ -94,6 +94,22 @@ Set `FANTRAX_LEAGUE_ID` in the host `.env` (no secret needed for public roster r
 
 Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids).
 
+## Adds and drops (practice mode)
+
+```text
+/nhl-add player:<autocomplete> salary:900k [for_team]
+/ahl-add player:<autocomplete> [for_team]
+/drop-player player:<your roster> [for_team]
+```
+
+Anyone on a draft team can run these, but while `transactions.mode` is `practice` they only work in `#draft-practice`, and threads are created there with `[NHL]` / `[AHL]` / `[DROP]` title prefixes. Thread titles look like `Joe Smith RW, ANA`; the bot posts and tags the user and team.
+
+- **NHL adds** — unrostered players who are not minors-eligible (players missing from `data/minors-status.csv` count as NHL). Minimum bid 850k. Re-running `/nhl-add` on the same player posts a bid in the existing thread; it must beat the highest amount at the start of any message in the thread (typed bids like `1.2m` count).
+- **AHL adds** — unrostered green-M players with NHL contract history (`draftFromRound` 24, same pool as the draft). Posts `Team add Joe Smith — @user`.
+- **Drops** — autocomplete shows your Fantrax roster with contract, e.g. `Joe Smith RW, ANA — 4 years @ 3m`. Rookie contracts fall back to First 850k / Second 1.1m / Third 1.5m / RFA 1 3m / RFA 2 6m / RFA 3 9m when Fantrax has no salary.
+
+Candidate lists refresh hourly from Fantrax; rosters are re-checked (60s cache) on every submit. Threads are tracked in `data/transactions.json`. Config lives under `transactions` in `data/config.json` (`mode`: `practice` or `live`, channel ids, `minBid`). Refresh `data/minors-status.csv` from the fantasyhockey `Fantrax_Eligible_Players.csv` export when eligibility changes.
+
 ## Pick-clock warnings
 
 Admins can re-announce who’s up as time runs out (any number of thresholds):

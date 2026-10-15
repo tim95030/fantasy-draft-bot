@@ -52,6 +52,7 @@ async function main() {
     console.log(`Logged in as ${client.user.tag}`);
     engine.resumeTimerIfNeeded();
     engine.startSleepWatcher();
+    require('./transactions/snapshot').start();
   });
 
   await client.login(process.env.DISCORD_TOKEN);
