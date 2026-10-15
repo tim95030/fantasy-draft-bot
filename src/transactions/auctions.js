@@ -13,7 +13,26 @@ const { loadOrder, findTeamsForUser } = require('../draft/order');
 const { postInThread } = require('./threads');
 
 const HOUR_MS = 60 * 60 * 1000;
+const MIN_MS = 60 * 1000;
 const TICK_MS = 60 * 1000;
+
+/** `auctionMinutes` in config overrides `auctionHours` when set (for testing). */
+function auctionCloseMs(cfg = txnConfig()) {
+  const min = Number(cfg.auctionMinutes);
+  if (Number.isFinite(min) && min > 0) return min * MIN_MS;
+  return (cfg.auctionHours ?? 24) * HOUR_MS;
+}
+
+function resyncOpenAuctionDeadlines() {
+  const ms = auctionCloseMs();
+  for (const entry of registry.listOpenAuctions('nhl')) {
+    const base = Date.parse(entry.highBid?.at || entry.createdAt || 0);
+    if (!Number.isFinite(base)) continue;
+    const closeAt = new Date(base + ms).toISOString();
+    registry.upsertEntry('nhl', entry.playerId, { closeAt });
+    scheduleClose(registry.getEntry('nhl', entry.playerId));
+  }
+}
 const MAX_SCAN_MESSAGES = 1000;
 
 let client = null;
@@ -97,8 +116,7 @@ async function applyBid({ kind, playerId, amount, userId, teamName, messageId })
   const amountErr = validateBidAmount(amount, prevHigh, cfg);
   if (amountErr) return { error: amountErr };
 
-  const hours = cfg.auctionHours ?? 24;
-  const closeAt = new Date(Date.now() + hours * HOUR_MS).toISOString();
+  const closeAt = new Date(Date.now() + auctionCloseMs(cfg)).toISOString();
   const highBid = {
     amount,
     userId: String(userId),
@@ -225,7 +243,7 @@ async function tick() {
 
 function startScheduler() {
   if (tickTimer) clearInterval(tickTimer);
-  rescheduleAll();
+  resyncOpenAuctionDeadlines();
   tickTimer = setInterval(() => tick().catch((e) => console.error(e.message)), TICK_MS);
 }
 
