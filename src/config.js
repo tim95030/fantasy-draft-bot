@@ -29,6 +29,13 @@ const DEFAULTS = {
     ahlAddsChannelId: '1549410712793653308',
     dropsChannelId: '1549410801960493136',
     minBid: 850_000,
+    bidIncrement: 25_000,
+    minRaise: 100_000,
+    auctionHours: 24,
+    enforceFaWindow: false,
+    faOpensAt: null,
+    faClosesAt: null,
+    dropCooldownHours: 48,
   },
 };
 

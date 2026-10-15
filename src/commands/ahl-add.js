@@ -3,6 +3,7 @@ const fantrax = require('../draft/fantrax');
 const { audit } = require('../draft/audit');
 const snapshot = require('../transactions/snapshot');
 const threads = require('../transactions/threads');
+const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { playerLabel } = require('../transactions/format');
 
@@ -46,6 +47,11 @@ module.exports = {
       await interaction.reply({ content: gate, ephemeral: true });
       return;
     }
+    const fa = common.faWindowError(cfg);
+    if (fa) {
+      await interaction.reply({ content: fa, ephemeral: true });
+      return;
+    }
     const { team, error } = common.resolveTeam(interaction);
     if (error) {
       await interaction.reply({ content: error, ephemeral: true });
@@ -56,10 +62,16 @@ module.exports = {
     try {
       const snap = await snapshot.getSnapshot();
       const id = fantrax.normalizeFantraxId(interaction.options.getString('player'));
-      const player = snap.directory.get(id);
+      const player = registry.resolvePlayer(id, snap, 'ahl') || snap.directory.get(id);
       if (!player) throw new Error('Player not found. Pick one from the autocomplete list.');
       const owner = (await fantrax.fetchRosterOwnership()).byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
+      const cooldown = cfg.dropCooldownHours ?? 48;
+      if (registry.dropBlocked(team.teamName, id, cooldown)) {
+        throw new Error(
+          `Your team dropped **${player.name}** within the last ${cooldown} hours. Other teams may add them; you cannot re-add yet.`,
+        );
+      }
       if (snap.minors.get(id)?.round !== '24') {
         throw new Error(
           `${player.name} is not an AHL add (needs the green M and NHL contract history).`,
@@ -77,6 +89,7 @@ module.exports = {
           playerId: id,
           title: common.threadTitle('ahl', label, cfg),
           reason: `/ahl-add by ${interaction.user.tag}`,
+          meta: { player, status: 'claimed' },
         });
         await threads.postInThread(
           thread,

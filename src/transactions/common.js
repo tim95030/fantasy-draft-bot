@@ -1,5 +1,6 @@
 const { loadConfig } = require('../config');
 const snapshot = require('./snapshot');
+const { faWindowError } = require('./faWindow');
 
 const KIND_CHANNEL = {
   nhl: 'nhlAddsChannelId',
@@ -60,6 +61,7 @@ function teamChoices(interaction, query) {
 module.exports = {
   txnConfig,
   channelError,
+  faWindowError,
   targetChannelId,
   threadTitle,
   resolveTeam,

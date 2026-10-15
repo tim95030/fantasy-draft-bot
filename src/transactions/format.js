@@ -28,9 +28,8 @@ function parseSalary(text) {
 
 /** Amount at the start of a thread message (`900k`, `1.1m — @user`). */
 function parseBidFromMessage(content) {
-  const m = String(content || '').match(/^\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*([km])?(?![\w.])/i);
-  if (!m) return null;
-  return parseSalary(`${m[1]}${m[2] || ''}`);
+  const { parseBidFromMessage: parse } = require('./bids');
+  return parse(content);
 }
 
 function trimNumber(n, digits) {

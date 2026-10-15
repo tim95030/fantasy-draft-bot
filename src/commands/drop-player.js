@@ -3,6 +3,7 @@ const fantrax = require('../draft/fantrax');
 const { audit } = require('../draft/audit');
 const snapshot = require('../transactions/snapshot');
 const threads = require('../transactions/threads');
+const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { contractLabel, playerLabel } = require('../transactions/format');
 
@@ -58,6 +59,11 @@ module.exports = {
       await interaction.reply({ content: gate, ephemeral: true });
       return;
     }
+    const fa = common.faWindowError(cfg);
+    if (fa) {
+      await interaction.reply({ content: fa, ephemeral: true });
+      return;
+    }
     const { team, error } = common.resolveTeam(interaction);
     if (error) {
       await interaction.reply({ content: error, ephemeral: true });
@@ -87,6 +93,7 @@ module.exports = {
           playerId: id,
           title: common.threadTitle('drop', label, cfg),
           reason: `/drop-player by ${interaction.user.tag}`,
+          meta: { player, status: 'posted' },
         });
         await threads.postInThread(
           thread,
@@ -100,6 +107,7 @@ module.exports = {
         await interaction.editReply(`${result.error} ${result.thread}`);
         return;
       }
+      registry.recordDrop({ teamName: team.teamName, playerId: id, playerName: player.name });
       audit('txn.drop', {
         fantraxId: `i${id}`,
         player: label,

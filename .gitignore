@@ -11,6 +11,7 @@ data/preset-picks.csv
 data/player-queues.json
 data/audit.jsonl
 data/transactions.json
+data/transaction-drops.json
 *.log
 *.swp
 *.swo

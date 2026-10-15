@@ -52,7 +52,11 @@ async function main() {
     console.log(`Logged in as ${client.user.tag}`);
     engine.resumeTimerIfNeeded();
     engine.startSleepWatcher();
-    require('./transactions/snapshot').start();
+    const snapshot = require('./transactions/snapshot');
+    snapshot.start();
+    const auctions = require('./transactions/auctions');
+    auctions.bindClient(client);
+    auctions.startScheduler();
   });
 
   await client.login(process.env.DISCORD_TOKEN);

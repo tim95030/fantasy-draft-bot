@@ -52,6 +52,11 @@ module.exports = {
     if (message.author.bot) return;
     if (!message.guild) return;
 
+    if (message.channel.isThread?.()) {
+      const { handleThreadMessage } = require('../transactions/auctions');
+      await handleThreadMessage(message);
+    }
+
     const config = loadConfig();
     if (!config.draftChannelId || message.channelId !== config.draftChannelId) return;
 

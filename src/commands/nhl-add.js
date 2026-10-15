@@ -3,8 +3,11 @@ const fantrax = require('../draft/fantrax');
 const { audit } = require('../draft/audit');
 const snapshot = require('../transactions/snapshot');
 const threads = require('../transactions/threads');
+const registry = require('../transactions/registry');
 const common = require('../transactions/common');
-const { parseSalary, formatSalary, playerLabel } = require('../transactions/format');
+const { validateBidAmount, validateYears, formatBidLine } = require('../transactions/bids');
+const { applyBid, scheduleClose } = require('../transactions/auctions');
+const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -13,12 +16,20 @@ module.exports = {
     .addStringOption((o) =>
       o
         .setName('player')
-        .setDescription('Unrostered, non-minors-eligible player')
+        .setDescription('Unrostered NHL player or active auction')
         .setRequired(true)
         .setAutocomplete(true),
     )
     .addStringOption((o) =>
-      o.setName('salary').setDescription('Bid, e.g. 850k or 1.2m (minimum 850k)').setRequired(true),
+      o.setName('salary').setDescription('Bid, e.g. 850k (25k steps, +100k over high)').setRequired(true),
+    )
+    .addIntegerOption((o) =>
+      o
+        .setName('years')
+        .setDescription('Contract length if you win (1–6 years)')
+        .setRequired(true)
+        .setMinValue(1)
+        .setMaxValue(6),
     )
     .addStringOption((o) =>
       o
@@ -34,10 +45,11 @@ module.exports = {
       return;
     }
     const snap = await snapshot.getSnapshot();
+    const players = registry.searchNhlAutocomplete(snap, focused.value, snapshot.search);
     await interaction.respond(
-      snapshot.search(snap.nhl, focused.value).map((p) => ({
-        name: playerLabel(p).slice(0, 100),
-        value: p.id,
+      players.map((p) => ({
+        name: `${p._auction ? '🔨 ' : ''}${playerLabel(p)}`.slice(0, 100),
+        value: p.id.slice(0, 100),
       })),
     );
   },
@@ -49,12 +61,19 @@ module.exports = {
       await interaction.reply({ content: gate, ephemeral: true });
       return;
     }
+    const fa = common.faWindowError(cfg);
+    if (fa) {
+      await interaction.reply({ content: fa, ephemeral: true });
+      return;
+    }
     const { team, error } = common.resolveTeam(interaction);
     if (error) {
       await interaction.reply({ content: error, ephemeral: true });
       return;
     }
+
     const amount = parseSalary(interaction.options.getString('salary'));
+    const years = interaction.options.getInteger('years');
     if (!amount) {
       await interaction.reply({
         content: 'Salary must look like `850k`, `1.2m` or `1200000`.',
@@ -62,11 +81,9 @@ module.exports = {
       });
       return;
     }
-    if (amount < cfg.minBid) {
-      await interaction.reply({
-        content: `Minimum bid is **${formatSalary(cfg.minBid)}**.`,
-        ephemeral: true,
-      });
+    const yearsErr = validateYears(years);
+    if (yearsErr) {
+      await interaction.reply({ content: yearsErr, ephemeral: true });
       return;
     }
 
@@ -74,56 +91,97 @@ module.exports = {
     try {
       const snap = await snapshot.getSnapshot();
       const id = fantrax.normalizeFantraxId(interaction.options.getString('player'));
-      const player = snap.directory.get(id);
-      if (!player) throw new Error('Player not found. Pick one from the autocomplete list.');
+      const player = registry.resolvePlayer(id, snap, 'nhl');
+      if (!player) {
+        throw new Error(
+          'Player not found. Pick from autocomplete (active auctions show with 🔨).',
+        );
+      }
+
+      const openEntry = registry.getEntry('nhl', id);
       const owner = (await fantrax.fetchRosterOwnership()).byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
-      if (snap.minors.get(id)?.minors === 'Y') {
-        throw new Error(`${player.name} is minors-eligible. Use \`/ahl-add\` instead.`);
+
+      if (!openEntry || openEntry.status !== 'open') {
+        if (snap.minors.get(id)?.minors === 'Y') {
+          throw new Error(`${player.name} is minors-eligible. Use \`/ahl-add\` instead.`);
+        }
       }
 
       const channel = await interaction.client.channels.fetch(common.targetChannelId('nhl', cfg));
       const label = playerLabel(player);
-      const bidLine = `${formatSalary(amount)} — <@${interaction.user.id}> (${team.teamName})`;
+      const line = formatBidLine(amount, years, interaction.user.id, team.teamName);
 
       const result = await threads.withLock(threads.registryKey('nhl', id), async () => {
         const existing = await threads.findThread(interaction.client, 'nhl', id, channel.id);
+        const prevHigh = registry.getEntry('nhl', id)?.highBid?.amount || 0;
+        const amountErr = validateBidAmount(amount, prevHigh, cfg);
+        if (amountErr) return { error: amountErr, thread: existing };
+
         if (existing) {
-          const highest = await threads.highestBid(existing);
-          if (amount <= highest) {
-            return {
-              error: `Current highest bid on ${label} is **${formatSalary(highest)}** — yours must be higher.`,
-              thread: existing,
-            };
+          if (!registry.getEntry('nhl', id)?.player) {
+            registry.upsertEntry('nhl', id, { player, status: 'open' });
           }
-          await threads.postInThread(existing, bidLine, [interaction.user.id]);
-          return { thread: existing, created: false, previous: highest };
+          const bid = await applyBid({
+            kind: 'nhl',
+            playerId: id,
+            amount,
+            years,
+            userId: interaction.user.id,
+            teamName: team.teamName,
+            thread: existing,
+          });
+          if (bid.error) return { error: bid.error, thread: existing };
+          const msg = await threads.postInThread(existing, line, [interaction.user.id]);
+          registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
+          return { thread: existing, created: false, previous: prevHigh };
         }
+
         const thread = await threads.createThread(channel, {
           kind: 'nhl',
           playerId: id,
           title: common.threadTitle('nhl', label, cfg),
           reason: `/nhl-add by ${interaction.user.tag}`,
+          meta: {
+            player,
+            status: 'open',
+            ineligibleUserIds: [],
+          },
         });
-        await threads.postInThread(thread, bidLine, [interaction.user.id]);
+        const bid = await applyBid({
+          kind: 'nhl',
+          playerId: id,
+          amount,
+          years,
+          userId: interaction.user.id,
+          teamName: team.teamName,
+          thread,
+        });
+        if (bid.error) return { error: bid.error, thread };
+        const msg = await threads.postInThread(thread, line, [interaction.user.id]);
+        registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
+        scheduleClose(registry.getEntry('nhl', id));
         return { thread, created: true };
       });
 
       if (result.error) {
-        await interaction.editReply(`${result.error}\n${result.thread}`);
+        const suffix = result.thread ? `\n${result.thread}` : '';
+        await interaction.editReply(`${result.error}${suffix}`);
         return;
       }
-      audit(result.created ? 'txn.nhl_add' : 'txn.nhl_bid', {
-        fantraxId: `i${id}`,
-        player: label,
-        amount,
-        previousHigh: result.previous ?? null,
-        teamName: team.teamName,
-        by: interaction.user.id,
-        threadId: result.thread.id,
-      });
+      if (result.created) {
+        audit('txn.nhl_add', {
+          fantraxId: `i${id}`,
+          player: label,
+          amount,
+          years,
+          teamName: team.teamName,
+          by: interaction.user.id,
+          threadId: result.thread.id,
+        });
+      }
       await interaction.editReply(
-        `${result.created ? 'Opened' : 'Bid posted in'} ${result.thread} — **${formatSalary(amount)}** for ${label}.`,
+        `${result.created ? 'Opened' : 'Bid posted in'} ${result.thread} — **${formatSalary(amount)} x ${years} years** for ${label}.`,
       );
     } catch (err) {
       await interaction.editReply(err.message);
