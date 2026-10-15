@@ -2,24 +2,25 @@ const { formatSalary, parseSalary } = require('./format');
 
 function parseBidMessage(content) {
   const text = String(content || '').trim();
-  const amount = (() => {
-    const m = text.match(/^\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*([km])?(?![\w.])/i);
-    if (!m) return null;
-    return parseSalary(`${m[1]}${m[2] || ''}`);
-  })();
-  if (!amount) return null;
-  const yearsMatch =
-    text.match(/\bx\s*(\d)\s*(?:years?)?/i) ||
-    text.match(/\((\d)\s*years?\)/i) ||
-    text.match(/—\s*(\d)\s*years?\s*—/i);
-  const years = yearsMatch ? Number(yearsMatch[1]) : null;
-  return { amount, years };
+  const m = text.match(/^\s*\$?\s*(\d[\d,]*(?:\.\d+)?)\s*([km])?(?![\w.])/i);
+  if (!m) return null;
+  const amount = parseSalary(`${m[1]}${m[2] || ''}`);
+  return amount ? { amount } : null;
 }
 
 /** @deprecated use parseBidMessage */
 function parseBidFromMessage(content) {
   const p = parseBidMessage(content);
   return p?.amount ?? null;
+}
+
+/** Winner reply after auction: `3`, `3 years`, `6 year`. */
+function parseContractYears(content) {
+  const text = String(content || '').trim();
+  const m = text.match(/^(\d)\s*(?:year|years|yr|yrs)?\.?\s*$/i);
+  if (!m) return null;
+  const y = Number(m[1]);
+  return y >= 1 && y <= 6 ? y : null;
 }
 
 function validateYears(years) {
@@ -50,13 +51,14 @@ function validateBidAmount(amount, previousHigh, cfg) {
   return null;
 }
 
-function formatBidLine(amount, years, userId, teamName) {
-  return `${formatSalary(amount)} x ${years} years — <@${userId}> (${teamName})`;
+function formatBidLine(amount, userId, teamName) {
+  return `${formatSalary(amount)} — <@${userId}> (${teamName})`;
 }
 
 module.exports = {
   parseBidMessage,
   parseBidFromMessage,
+  parseContractYears,
   validateYears,
   validateBidAmount,
   formatBidLine,

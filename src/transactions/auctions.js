@@ -2,6 +2,7 @@ const { audit } = require('../draft/audit');
 const { formatSalary, playerLabel } = require('./format');
 const {
   parseBidMessage,
+  parseContractYears,
   validateBidAmount,
   validateYears,
   formatBidLine,
@@ -59,8 +60,6 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
     for (const msg of chronological) {
       const parsed = parseBidMessage(msg.content);
       if (!parsed?.amount) continue;
-      const yearsErr = validateYears(parsed.years);
-      if (yearsErr) continue;
       const amountErr = validateBidAmount(parsed.amount, prevHigh, cfg);
       if (amountErr) continue;
       if (ineligible.has(String(msg.author.id))) continue;
@@ -68,7 +67,6 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
       const teamMatch = String(msg.content).match(/\(([^)]+)\)\s*$/);
       best = {
         amount: parsed.amount,
-        years: parsed.years,
         userId: msg.author.id,
         teamName: teamMatch ? teamMatch[1].trim() : '',
         messageId: msg.id,
@@ -82,20 +80,9 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
   return best;
 }
 
-async function applyBid({
-  kind,
-  playerId,
-  amount,
-  years,
-  userId,
-  teamName,
-  messageId,
-  thread,
-}) {
+async function applyBid({ kind, playerId, amount, userId, teamName, messageId }) {
   if (kind !== 'nhl') return { error: 'Only NHL auctions use bidding.' };
   const cfg = txnConfig();
-  const yearsErr = validateYears(years);
-  if (yearsErr) return { error: yearsErr };
   const entry = registry.getEntry('nhl', playerId);
   if (!entry) return { error: 'This auction is not open.' };
   if (entry.status && entry.status !== 'open') return { error: 'This auction is not open.' };
@@ -111,7 +98,6 @@ async function applyBid({
   const closeAt = new Date(Date.now() + hours * HOUR_MS).toISOString();
   const highBid = {
     amount,
-    years,
     userId: String(userId),
     teamName,
     messageId: messageId || null,
@@ -124,7 +110,6 @@ async function applyBid({
   audit('txn.nhl_bid', {
     fantraxId: `i${playerId}`,
     amount,
-    years,
     teamName,
     by: userId,
     closeAt,
@@ -153,26 +138,77 @@ async function closeAuction(playerId) {
   if (winner && ineligible.map(String).includes(String(winner.userId))) winner = null;
   if (!winner) winner = await scanThreadForHighBid(thread, ineligible);
 
-  registry.upsertEntry('nhl', playerId, {
-    status: winner ? 'won' : 'closed',
-    closedAt: new Date().toISOString(),
-    winner: winner || null,
-  });
-
   const label = entry.player ? playerLabel(entry.player) : playerId;
   if (winner) {
-    const line = `**Auction closed** — **${label}** won by **${winner.teamName || 'unknown team'}** at **${formatSalary(winner.amount)} x ${winner.years} years** (<@${winner.userId}>). Commish: add in Fantrax.`;
+    registry.upsertEntry('nhl', playerId, {
+      status: 'awaiting_years',
+      closedAt: new Date().toISOString(),
+      winner,
+    });
+    const line =
+      `**Auction closed** — <@${winner.userId}> won **${label}** for **${formatSalary(winner.amount)}** ` +
+      `(${winner.teamName || 'your team'}).\n\n` +
+      `<@${winner.userId}> Reply in this thread with contract length (**1**–**6** years), e.g. \`3\` or \`3 years\`.`;
     await postInThread(thread, line, [winner.userId]);
     audit('txn.nhl_won', {
       fantraxId: `i${playerId}`,
       player: label,
-      ...winner,
+      amount: winner.amount,
+      userId: winner.userId,
+      teamName: winner.teamName,
       threadId: entry.threadId,
+      awaitingYears: true,
     });
   } else {
+    registry.upsertEntry('nhl', playerId, {
+      status: 'closed',
+      closedAt: new Date().toISOString(),
+      winner: null,
+    });
     await postInThread(thread, `**Auction closed** — no valid winning bid for **${label}**.`);
     audit('txn.nhl_closed', { fantraxId: `i${playerId}`, player: label, threadId: entry.threadId });
   }
+}
+
+async function handleWinnerYears(message, entry) {
+  if (String(message.author.id) !== String(entry.winner?.userId)) return;
+  const years = parseContractYears(message.content);
+  if (!years) {
+    await message
+      .reply({
+        content: 'Reply with a number from **1** to **6** (e.g. `3` or `4 years`).',
+        allowedMentions: { parse: [] },
+      })
+      .catch(() => {});
+    return;
+  }
+  const yearsErr = validateYears(years);
+  if (yearsErr) {
+    await message.reply({ content: yearsErr, allowedMentions: { parse: [] } }).catch(() => {});
+    return;
+  }
+
+  const label = entry.player ? playerLabel(entry.player) : entry.playerId;
+  registry.upsertEntry('nhl', entry.playerId, {
+    status: 'won',
+    contractYears: years,
+    winner: { ...entry.winner, years },
+  });
+  await message.reply({
+    content:
+      `**${label}** — **${formatSalary(entry.winner.amount)}** for **${years} year${years === 1 ? '' : 's'}** ` +
+      `(<@${entry.winner.userId}>). Commish: add in Fantrax.`,
+    allowedMentions: { users: [entry.winner.userId] },
+  });
+  audit('txn.nhl_contract', {
+    fantraxId: `i${entry.playerId}`,
+    player: label,
+    amount: entry.winner.amount,
+    years,
+    userId: entry.winner.userId,
+    teamName: entry.winner.teamName,
+    threadId: entry.threadId,
+  });
 }
 
 async function tick() {
@@ -209,18 +245,18 @@ async function markBidEdited(threadId, authorId) {
 async function handleThreadMessage(message) {
   if (!message.guild || message.author?.bot) return;
   const entry = entryByThreadId(message.channel.id);
-  if (!entry || entry.status !== 'open') return;
+  if (!entry) return;
+
+  if (entry.status === 'awaiting_years') {
+    await handleWinnerYears(message, entry);
+    return;
+  }
+  if (entry.status !== 'open') return;
 
   const parsed = parseBidMessage(message.content);
   if (!parsed?.amount) return;
 
   const cfg = txnConfig();
-  const yearsErr = validateYears(parsed.years);
-  if (yearsErr) {
-    await message.reply({ content: yearsErr, allowedMentions: { parse: [] } }).catch(() => {});
-    return;
-  }
-
   const prevHigh = entry.highBid?.amount || 0;
   const amountErr = validateBidAmount(parsed.amount, prevHigh, cfg);
   if (amountErr) {
@@ -239,7 +275,7 @@ async function handleThreadMessage(message) {
     await message
       .reply({
         content:
-          'Include your team at the end, e.g. `950k x 3 years — @you (New York Rangers)`, or use `/nhl-add`.',
+          'Include your team at the end, e.g. `950k — @you (New York Rangers)`, or use `/nhl-add`.',
         allowedMentions: { parse: [] },
       })
       .catch(() => {});
@@ -250,11 +286,9 @@ async function handleThreadMessage(message) {
     kind: 'nhl',
     playerId: entry.playerId,
     amount: parsed.amount,
-    years: parsed.years,
     userId: message.author.id,
     teamName,
     messageId: message.id,
-    thread: message.channel,
   });
   if (result.error) {
     await message.reply({ content: result.error, allowedMentions: { parse: [] } }).catch(() => {});

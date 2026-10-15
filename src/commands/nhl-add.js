@@ -5,7 +5,7 @@ const snapshot = require('../transactions/snapshot');
 const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
-const { validateBidAmount, validateYears, formatBidLine } = require('../transactions/bids');
+const { validateBidAmount, formatBidLine } = require('../transactions/bids');
 const { applyBid, scheduleClose } = require('../transactions/auctions');
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
 
@@ -22,14 +22,6 @@ module.exports = {
     )
     .addStringOption((o) =>
       o.setName('salary').setDescription('Bid, e.g. 850k (25k steps, +100k over high)').setRequired(true),
-    )
-    .addIntegerOption((o) =>
-      o
-        .setName('years')
-        .setDescription('Contract length if you win (1–6 years)')
-        .setRequired(true)
-        .setMinValue(1)
-        .setMaxValue(6),
     )
     .addStringOption((o) =>
       o
@@ -73,17 +65,11 @@ module.exports = {
     }
 
     const amount = parseSalary(interaction.options.getString('salary'));
-    const years = interaction.options.getInteger('years');
     if (!amount) {
       await interaction.reply({
         content: 'Salary must look like `850k`, `1.2m` or `1200000`.',
         ephemeral: true,
       });
-      return;
-    }
-    const yearsErr = validateYears(years);
-    if (yearsErr) {
-      await interaction.reply({ content: yearsErr, ephemeral: true });
       return;
     }
 
@@ -99,6 +85,13 @@ module.exports = {
       }
 
       const openEntry = registry.getEntry('nhl', id);
+      if (openEntry?.status === 'awaiting_years') {
+        throw new Error('This auction has ended and is waiting on the winner’s contract length.');
+      }
+      if (openEntry?.status && openEntry.status !== 'open') {
+        throw new Error('This auction is no longer open for bids.');
+      }
+
       const owner = (await fantrax.fetchRosterOwnership()).byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
 
@@ -110,7 +103,7 @@ module.exports = {
 
       const channel = await interaction.client.channels.fetch(common.targetChannelId('nhl', cfg));
       const label = playerLabel(player);
-      const line = formatBidLine(amount, years, interaction.user.id, team.teamName);
+      const line = formatBidLine(amount, interaction.user.id, team.teamName);
 
       const result = await threads.withLock(threads.registryKey('nhl', id), async () => {
         const existing = await threads.findThread(interaction.client, 'nhl', id, channel.id);
@@ -126,10 +119,8 @@ module.exports = {
             kind: 'nhl',
             playerId: id,
             amount,
-            years,
             userId: interaction.user.id,
             teamName: team.teamName,
-            thread: existing,
           });
           if (bid.error) return { error: bid.error, thread: existing };
           const msg = await threads.postInThread(existing, line, [interaction.user.id]);
@@ -152,10 +143,8 @@ module.exports = {
           kind: 'nhl',
           playerId: id,
           amount,
-          years,
           userId: interaction.user.id,
           teamName: team.teamName,
-          thread,
         });
         if (bid.error) return { error: bid.error, thread };
         const msg = await threads.postInThread(thread, line, [interaction.user.id]);
@@ -174,14 +163,13 @@ module.exports = {
           fantraxId: `i${id}`,
           player: label,
           amount,
-          years,
           teamName: team.teamName,
           by: interaction.user.id,
           threadId: result.thread.id,
         });
       }
       await interaction.editReply(
-        `${result.created ? 'Opened' : 'Bid posted in'} ${result.thread} — **${formatSalary(amount)} x ${years} years** for ${label}.`,
+        `${result.created ? 'Opened' : 'Bid posted in'} ${result.thread} — **${formatSalary(amount)}** for ${label}.`,
       );
     } catch (err) {
       await interaction.editReply(err.message);
