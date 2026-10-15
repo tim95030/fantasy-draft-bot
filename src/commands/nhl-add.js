@@ -89,6 +89,9 @@ module.exports = {
       if (openEntry?.status === 'awaiting_years') {
         throw new Error('This auction has ended and is waiting on the winner’s contract length.');
       }
+      if (openEntry?.status === 'won') {
+        throw new Error('This auction is complete (waiting on Fantrax). No more bids.');
+      }
       if (openEntry?.status && openEntry.status !== 'open') {
         throw new Error('This auction is no longer open for bids.');
       }

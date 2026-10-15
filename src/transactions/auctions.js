@@ -43,6 +43,16 @@ function bindClient(c) {
   client = c;
 }
 
+async function lockThreadPendingCommish(thread) {
+  try {
+    await thread.setLocked(true);
+    return true;
+  } catch (err) {
+    console.warn('Could not lock NHL auction thread:', err.message);
+    return false;
+  }
+}
+
 function entryByThreadId(threadId) {
   const reg = registry.loadRegistry();
   return Object.values(reg).find((e) => e.threadId === threadId && e.kind === 'nhl') || null;
@@ -213,12 +223,19 @@ async function handleWinnerYears(message, entry) {
   registry.upsertEntry('nhl', entry.playerId, {
     status: 'won',
     contractYears: years,
+    contractAt: new Date().toISOString(),
     winner: { ...entry.winner, years },
   });
+
+  const locked = await lockThreadPendingCommish(message.channel);
+  const lockNote = locked
+    ? 'This thread is **locked** — no further posts until the commish finishes in Fantrax and **archives** the thread here.'
+    : '**Commish:** lock or archive this thread after Fantrax is updated (bot needs **Manage Threads** to lock automatically).';
+
   await message.reply({
     content:
       `**${label}** — **${formatSalary(entry.winner.amount)}** for **${years} year${years === 1 ? '' : 's'}** ` +
-      `(<@${entry.winner.userId}>). Commish: add in Fantrax.`,
+      `(<@${entry.winner.userId}>). Commish: add in Fantrax.\n\n${lockNote}`,
     allowedMentions: { users: [entry.winner.userId] },
   });
   audit('txn.nhl_contract', {
@@ -272,6 +289,7 @@ async function handleThreadMessage(message) {
     await handleWinnerYears(message, entry);
     return;
   }
+  if (entry.status === 'won') return;
   if (entry.status !== 'open') return;
 
   const parsed = parseBidMessage(message.content);
