@@ -76,13 +76,14 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
     try {
       const snap = await snapshot.getSnapshot();
-      const id = fantrax.normalizeFantraxId(interaction.options.getString('player'));
-      const player = registry.resolvePlayer(id, snap, 'nhl');
-      if (!player) {
-        throw new Error(
-          'Player not found. Pick from autocomplete (active auctions show with 🔨).',
-        );
-      }
+      const resolved = registry.resolvePlayerFromInput(
+        interaction.options.getString('player'),
+        snap,
+        'nhl',
+        snapshot.search,
+      );
+      if (resolved.error) throw new Error(resolved.error);
+      const { player, id } = resolved;
 
       const openEntry = registry.getEntry('nhl', id);
       if (openEntry?.status === 'awaiting_years') {

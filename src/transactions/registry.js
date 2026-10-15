@@ -43,12 +43,76 @@ function listOpenAuctions(kind = 'nhl') {
   return Object.values(reg).filter((e) => e.kind === kind && e.status === 'open');
 }
 
+function looksLikeFantraxId(raw) {
+  const t = fantrax.normalizeFantraxId(raw);
+  return /^[0-9a-z]{4,12}$/i.test(t);
+}
+
 function resolvePlayer(playerId, snap, kind = 'nhl') {
   const id = fantrax.normalizeFantraxId(playerId);
   const fromDir = snap?.directory?.get(id);
   if (fromDir) return fromDir;
   const entry = getEntry(kind, id);
   return entry?.player || null;
+}
+
+/**
+ * Slash `player` option: Fantrax id from autocomplete, or an exact name match
+ * (common when mobile users type instead of selecting).
+ */
+function resolvePlayerFromInput(raw, snap, kind = 'nhl', searchFn) {
+  const text = String(raw || '').trim();
+  if (!text) return { error: 'Pick a player from autocomplete.' };
+
+  if (looksLikeFantraxId(text)) {
+    const id = fantrax.normalizeFantraxId(text);
+    const player = resolvePlayer(id, snap, kind);
+    if (player) return { player, id: player.id };
+  }
+
+  const q = fold(text);
+  const seen = new Set();
+  const candidates = [];
+  if (kind === 'nhl') {
+    for (const entry of listOpenAuctions('nhl')) {
+      if (entry.player && !seen.has(entry.player.id)) {
+        candidates.push(entry.player);
+        seen.add(entry.player.id);
+      }
+    }
+  }
+  const pool = kind === 'nhl' ? snap?.nhl || [] : snap?.ahl || [];
+  for (const p of pool) {
+    if (!seen.has(p.id)) {
+      candidates.push(p);
+      seen.add(p.id);
+    }
+  }
+
+  const exact = candidates.filter(
+    (p) => fold(p.name) === q || fold(playerLabel(p)) === q,
+  );
+  if (exact.length === 1) return { player: exact[0], id: exact[0].id };
+  if (exact.length > 1) {
+    return {
+      error: `Multiple players match **${text}**. Pick one from autocomplete (active auctions show with 🔨).`,
+    };
+  }
+
+  if (searchFn && q.length >= 2) {
+    const hits = searchFn(pool, text, 5);
+    if (hits.length === 1) return { player: hits[0], id: hits[0].id };
+  }
+
+  const open = kind === 'nhl' ? listOpenAuctions('nhl') : [];
+  if (open.length === 1 && open[0].player) {
+    return { player: open[0].player, id: open[0].player.id };
+  }
+
+  return {
+    error:
+      'Player not found. Choose from autocomplete (do not type the name manually). Active NHL auctions show with 🔨.',
+  };
 }
 
 function loadDrops() {
@@ -142,7 +206,9 @@ module.exports = {
   getEntry,
   upsertEntry,
   listOpenAuctions,
+  looksLikeFantraxId,
   resolvePlayer,
+  resolvePlayerFromInput,
   loadDrops,
   recordDrop,
   dropBlocked,
