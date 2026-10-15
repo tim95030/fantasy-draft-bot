@@ -1,6 +1,6 @@
-const { txnConfig } = require('./common');
+const { loadConfig } = require('../config');
 
-function faWindowError(cfg = txnConfig()) {
+function faWindowError(cfg = loadConfig().transactions) {
   if (!cfg.enforceFaWindow) return null;
   const now = Date.now();
   const open = cfg.faOpensAt ? Date.parse(cfg.faOpensAt) : null;
