@@ -89,6 +89,9 @@ async function applyBid({ kind, playerId, amount, userId, teamName, messageId })
   if ((entry.ineligibleUserIds || []).map(String).includes(String(userId))) {
     return { error: 'You are ineligible to win this player (edited bid). You cannot place new bids.' };
   }
+  if (entry.highBid?.userId && String(entry.highBid.userId) === String(userId)) {
+    return { error: 'You already hold the high bid. Wait for someone else to outbid you.' };
+  }
 
   const prevHigh = entry.highBid?.amount || 0;
   const amountErr = validateBidAmount(amount, prevHigh, cfg);
