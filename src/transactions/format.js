@@ -44,12 +44,16 @@ function formatSalary(amount) {
   return `${trimNumber(n / 1_000, 1)}k`;
 }
 
-/** `4 years @ 3m`, `First @ 850k`, `Minors @ 850k`. */
+/** `4 years @ 3m`, `First @ 850k`, `Minors (no cap hit)`. */
 function contractLabel(item) {
   const name = String(item?.contract || '').trim();
+  if (name.toLowerCase() === 'minors') {
+    return 'Minors (no cap hit)';
+  }
   const years = /^\d+$/.test(name) ? Number(name) : null;
   const label = years != null ? `${years} year${years === 1 ? '' : 's'}` : name || 'Contract';
-  const salary = item?.salary || ROOKIE_SALARY[name.toLowerCase()] || null;
+  const rookieKey = name.toLowerCase();
+  const salary = item?.salary || ROOKIE_SALARY[rookieKey] || null;
   return salary ? `${label} @ ${formatSalary(salary)}` : label;
 }
 
