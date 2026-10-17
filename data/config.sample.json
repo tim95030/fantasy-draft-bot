@@ -16,7 +16,7 @@
   "skipAccelEnabled": true,
   "makeupHours": 48,
   "transactions": {
-    "mode": "practice",
+    "mode": "live",
     "practiceChannelId": "1555323096226070558",
     "nhlAddsChannelId": "1549410654245625867",
     "ahlAddsChannelId": "1549410712793653308",

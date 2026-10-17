@@ -23,7 +23,7 @@ const DEFAULTS = {
   makeupHours: 48,
   /** /nhl-add, /ahl-add, /drop-player. `practice` = only from + into practiceChannelId. */
   transactions: {
-    mode: 'practice',
+    mode: 'live',
     practiceChannelId: '1555323096226070558',
     nhlAddsChannelId: '1549410654245625867',
     ahlAddsChannelId: '1549410712793653308',
