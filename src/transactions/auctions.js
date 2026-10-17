@@ -11,6 +11,7 @@ const registry = require('./registry');
 const { txnConfig } = require('./common');
 const { loadOrder, findTeamsForUser } = require('../draft/order');
 const { postInThread } = require('./threads');
+const { setWinnerOnlyPosting, clearThreadPostingOverrides } = require('./threadPerms');
 
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
@@ -181,6 +182,13 @@ async function closeAuction(playerId) {
       `(${winner.teamName || 'your team'}).\n\n` +
       `<@${winner.userId}> Reply in this thread with contract length (**1**–**6** years), e.g. \`3\` or \`3 years\`.`;
     await postInThread(thread, line, [winner.userId]);
+    const winnerOnly = await setWinnerOnlyPosting(thread, winner.userId);
+    if (!winnerOnly) {
+      await postInThread(
+        thread,
+        '_Could not restrict this thread to the winner only — grant the bot **Manage Threads** on the parent channel._',
+      );
+    }
     audit('txn.nhl_won', {
       fantraxId: `i${playerId}`,
       player: label,
@@ -228,6 +236,9 @@ async function handleWinnerYears(message, entry) {
   });
 
   const locked = await lockThreadPendingCommish(message.channel);
+  if (locked) {
+    await clearThreadPostingOverrides(message.channel, entry.winner.userId);
+  }
   const lockNote = locked
     ? 'This thread is **locked** — no further posts until the commish finishes in Fantrax and **archives** the thread here.'
     : '**Commish:** lock or archive this thread after Fantrax is updated (bot needs **Manage Threads** to lock automatically).';
