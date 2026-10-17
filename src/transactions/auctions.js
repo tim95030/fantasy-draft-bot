@@ -210,21 +210,47 @@ async function closeAuction(playerId) {
   }
 }
 
+async function notifyYearsUser(message, content) {
+  const body = `${content}\n\n_Reply in this thread with contract length (**1**–**6**), e.g. \`3\` or \`4 years\`._`;
+  try {
+    await message.author.send(body);
+    return;
+  } catch {
+    // DMs closed
+  }
+  try {
+    const reply = await message.channel.send({
+      content: `<@${message.author.id}> ${content}`,
+      allowedMentions: { users: [message.author.id] },
+    });
+    setTimeout(() => {
+      reply.delete().catch(() => {});
+    }, 45_000);
+  } catch {
+    // ignore
+  }
+}
+
 async function handleWinnerYears(message, entry) {
-  if (String(message.author.id) !== String(entry.winner?.userId)) return;
+  const isWinner = String(message.author.id) === String(entry.winner?.userId);
+  if (!isWinner) {
+    await deleteUserMessage(message);
+    return;
+  }
+
   const years = parseContractYears(message.content);
   if (!years) {
-    await message
-      .reply({
-        content: 'Reply with a number from **1** to **6** (e.g. `3` or `4 years`).',
-        allowedMentions: { parse: [] },
-      })
-      .catch(() => {});
+    await deleteUserMessage(message);
+    await notifyYearsUser(
+      message,
+      'Reply with a number from **1** to **6** (e.g. `3` or `4 years`).',
+    );
     return;
   }
   const yearsErr = validateYears(years);
   if (yearsErr) {
-    await message.reply({ content: yearsErr, allowedMentions: { parse: [] } }).catch(() => {});
+    await deleteUserMessage(message);
+    await notifyYearsUser(message, yearsErr);
     return;
   }
 
@@ -244,12 +270,14 @@ async function handleWinnerYears(message, entry) {
     ? 'This thread is **locked** — no further posts until the commish finishes in Fantrax and **archives** the thread here.'
     : '**Commish:** lock or archive this thread after Fantrax is updated (bot needs **Manage Threads** to lock automatically).';
 
-  await message.reply({
-    content:
-      `**${label}** — **${formatSalary(entry.winner.amount)}** for **${years} year${years === 1 ? '' : 's'}** ` +
+  await postInThread(
+    message.channel,
+    `**${label}** — **${formatSalary(entry.winner.amount)}** for **${years} year${years === 1 ? '' : 's'}** ` +
       `(<@${entry.winner.userId}>). Commish: add in Fantrax.\n\n${lockNote}`,
-    allowedMentions: { users: [entry.winner.userId] },
-  });
+    [entry.winner.userId],
+  );
+  await deleteUserMessage(message);
+
   audit('txn.nhl_contract', {
     fantraxId: `i${entry.playerId}`,
     player: label,
@@ -397,7 +425,10 @@ async function handleThreadMessage(message) {
     await handleWinnerYears(message, entry);
     return;
   }
-  if (entry.status === 'won') return;
+  if (entry.status === 'won') {
+    await deleteUserMessage(message);
+    return;
+  }
   if (entry.status !== 'open') return;
 
   await handleOpenAuctionBid(message, entry);
