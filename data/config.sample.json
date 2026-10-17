@@ -28,6 +28,7 @@
     "enforceFaWindow": false,
     "faOpensAt": null,
     "faClosesAt": null,
-    "dropCooldownHours": 48
+    "dropCooldownHours": 48,
+    "commishUserIds": []
   }
 }

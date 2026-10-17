@@ -12,7 +12,12 @@ const { txnConfig } = require('./common');
 const { loadOrder, findTeamsForUser } = require('../draft/order');
 const threads = require('./threads');
 const { postInThread } = threads;
-const { setWinnerOnlyPosting, clearThreadPostingOverrides } = require('./threadPerms');
+const {
+  setWinnerOnlyPosting,
+  clearThreadPostingOverrides,
+  ensureCommishThreadAccess,
+} = require('./threadPerms');
+const { isTxnCommish } = require('../config');
 
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
@@ -277,6 +282,7 @@ async function handleWinnerYears(message, entry) {
   const locked = await lockThreadPendingCommish(message.channel);
   if (locked) {
     await clearThreadPostingOverrides(message.channel, entry.winner.userId);
+    await ensureCommishThreadAccess(message.channel);
   }
   const lockNote = locked
     ? 'This thread is **locked** — no further posts until the commish finishes in Fantrax and **archives** the thread here.'
@@ -474,6 +480,7 @@ async function markBidEdited(threadId, authorId) {
 
 async function handleThreadMessage(message) {
   if (!message.guild || message.author?.bot) return;
+  if (isTxnCommish(message.author.id)) return;
   const entry = entryByThreadId(message.channel.id);
   if (!entry) return;
 

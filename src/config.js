@@ -36,6 +36,8 @@ const DEFAULTS = {
     faOpensAt: null,
     faClosesAt: null,
     dropCooldownHours: 48,
+    /** Discord user IDs auto-added to every new FA thread (view + post, including locked). */
+    commishUserIds: [],
   },
 };
 
@@ -53,7 +55,11 @@ function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(paths.CONFIG_JSON, 'utf8'));
   const merged = { ...DEFAULTS, ...raw, adminUserIds: [...(raw.adminUserIds || [])] };
   merged.skipAccelEnabled = merged.skipAccelEnabled !== false;
-  merged.transactions = { ...DEFAULTS.transactions, ...(raw.transactions || {}) };
+  merged.transactions = {
+    ...DEFAULTS.transactions,
+    ...(raw.transactions || {}),
+    commishUserIds: [...(raw.transactions?.commishUserIds || DEFAULTS.transactions.commishUserIds || [])],
+  };
   merged.pickWarningsSec = normalizePickWarnings(
     merged.pickWarningsSec,
     merged.secondsPerPick,
@@ -93,12 +99,18 @@ function isAdmin(userId, member = null) {
   return false;
 }
 
+function isTxnCommish(userId) {
+  const ids = loadConfig().transactions?.commishUserIds || [];
+  return ids.map(String).includes(String(userId));
+}
+
 module.exports = {
   DEFAULTS,
   loadConfig,
   saveConfig,
   updateConfig,
   isAdmin,
+  isTxnCommish,
   ensureConfigFile,
   normalizePickWarnings,
 };
