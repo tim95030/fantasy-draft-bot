@@ -319,9 +319,37 @@ async function deleteUserMessage(message) {
   }
 }
 
-async function notifyBidUser(message, content, { extra } = {}) {
+function threadJumpUrl(message) {
+  const guildId = message.guild?.id;
+  const threadId = message.channel?.id;
+  if (!guildId || !threadId) return null;
+  return `https://discord.com/channels/${guildId}/${threadId}`;
+}
+
+function nhlBidAssistBlock(message, entry, { amount, teamName } = {}) {
+  const label = entry?.player ? playerLabel(entry.player) : entry?.title || entry?.playerId || 'this player';
+  const sal = amount != null ? formatSalary(amount) : null;
+  const owned = findTeamsForUser(loadOrder(), message.author.id);
+  const team =
+    teamName ||
+    (owned.length === 1 ? owned[0].teamName : null);
+  const lines = [];
+  const url = threadJumpUrl(message);
+  if (url) lines.push(`**Auction thread:** ${url}`);
+  const salaryHint = sal || 'your bid';
+  let slash = `\`/nhl-add\` → player **${label}** → salary **${salaryHint}**`;
+  if (owned.length > 1) slash += ' → `for_team` (your fantasy team)';
+  else if (team) slash += ` → (for **${team}**)`;
+  lines.push(`**Try again:** ${slash}`);
+  const threadBid = team ? `${salaryHint} (${team})` : `${salaryHint} (Your Team)`;
+  lines.push(`**Or in that thread:** \`${threadBid}\``);
+  return lines.join('\n');
+}
+
+async function notifyBidUser(message, content, { extra, entry, amount, teamName } = {}) {
   const tail = extra ? `\n\n${extra}` : '';
-  const body = `${content}${tail}\n\n_Use \`/nhl-add\` or post a bid like \`950k (Team Name)\` in this thread._`;
+  const assist = entry ? `\n\n${nhlBidAssistBlock(message, entry, { amount, teamName })}` : '';
+  const body = `${content}${tail}${assist}`;
   try {
     await message.author.send(body);
     return;
@@ -329,8 +357,10 @@ async function notifyBidUser(message, content, { extra } = {}) {
     // DMs closed
   }
   try {
+    const shortAssist = entry ? nhlBidAssistBlock(message, entry, { amount, teamName }) : '';
+    const replyBody = shortAssist ? `${content}\n\n${shortAssist}` : content;
     const reply = await message.channel.send({
-      content: `<@${message.author.id}> ${content}`,
+      content: `<@${message.author.id}> ${replyBody}`.slice(0, 2000),
       allowedMentions: { users: [message.author.id] },
     });
     setTimeout(() => {
@@ -366,15 +396,15 @@ async function handleOpenAuctionBid(message, entry) {
   const amountErr = validateBidAmount(amount, prevHigh, cfg);
   if (amountErr) {
     await deleteUserMessage(message);
-    await notifyBidUser(message, amountErr);
+    await notifyBidUser(message, amountErr, { entry, amount });
     return;
   }
   if (!teamName) {
     await deleteUserMessage(message);
-    await notifyBidUser(
-      message,
-      'Include your fantasy team at the end, e.g. `950k (New York Rangers)`, or use `/nhl-add`.',
-    );
+    await notifyBidUser(message, 'Include your fantasy team at the end, e.g. `950k (New York Rangers)`.', {
+      entry,
+      amount,
+    });
     return;
   }
 
@@ -406,8 +436,11 @@ async function handleOpenAuctionBid(message, entry) {
 
   const removed = await deleteUserMessage(message);
   const deleteHint = removed ? null : MANAGE_MESSAGES_HINT;
-  if (result.error) await notifyBidUser(message, result.error, { extra: deleteHint });
-  else if (!removed && result.ok) await notifyBidUser(message, 'Bid posted.', { extra: deleteHint });
+  if (result.error) {
+    await notifyBidUser(message, result.error, { extra: deleteHint, entry, amount, teamName });
+  } else if (!removed && result.ok) {
+    await notifyBidUser(message, 'Bid posted.', { extra: deleteHint, entry, amount, teamName });
+  }
 }
 
 async function markBidEdited(threadId, authorId) {
