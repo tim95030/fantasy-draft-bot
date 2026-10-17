@@ -20,8 +20,15 @@ This is a **personal live-draft bot**, not a Zendesk repo.
 git checkout main
 git add …
 git commit -m "…"
-git push origin main
 ```
+
+**Push as `tim95030`**, not `tschroeder-zendesk` (default `git push` / SSH often picks the work key):
+
+```bash
+git push "https://tim95030:$(gh auth token -u tim95030)@github.com/tim95030/fantasy-draft-bot.git" main
+```
+
+Then on Oracle: `git fetch origin && git reset --hard origin/main`, `npm run register-commands` if commands changed, `sudo systemctl restart fantasy-draft-bot`.
 
 ## Forbidden
 
