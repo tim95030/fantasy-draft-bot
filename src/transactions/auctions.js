@@ -210,8 +210,9 @@ async function closeAuction(playerId) {
   }
 }
 
-async function notifyYearsUser(message, content) {
-  const body = `${content}\n\n_Reply in this thread with contract length (**1**–**6**), e.g. \`3\` or \`4 years\`._`;
+async function notifyYearsUser(message, content, { extra } = {}) {
+  const tail = extra ? `\n\n${extra}` : '';
+  const body = `${content}${tail}\n\n_Reply in this thread with contract length (**1**–**6**), e.g. \`3\` or \`4 years\`._`;
   try {
     await message.author.send(body);
     return;
@@ -276,7 +277,8 @@ async function handleWinnerYears(message, entry) {
       `(<@${entry.winner.userId}>). Commish: add in Fantrax.\n\n${lockNote}`,
     [entry.winner.userId],
   );
-  await deleteUserMessage(message);
+  const removed = await deleteUserMessage(message);
+  if (!removed) await notifyYearsUser(message, 'Contract years recorded.', { extra: MANAGE_MESSAGES_HINT });
 
   audit('txn.nhl_contract', {
     fantraxId: `i${entry.playerId}`,
@@ -304,16 +306,22 @@ function startScheduler() {
   tickTimer = setInterval(() => tick().catch((e) => console.error(e.message)), TICK_MS);
 }
 
+const MANAGE_MESSAGES_HINT =
+  'Ask commish to allow the bot **Manage Messages** on **#nhl-adds** (channel permission on the bot role, not per-thread).';
+
 async function deleteUserMessage(message) {
   try {
-    if (message.deletable) await message.delete();
+    if (!message.deletable) return false;
+    await message.delete();
+    return true;
   } catch {
-    // Missing Manage Messages
+    return false;
   }
 }
 
-async function notifyBidUser(message, content) {
-  const body = `${content}\n\n_Use \`/nhl-add\` or post a bid like \`950k (Team Name)\` in this thread._`;
+async function notifyBidUser(message, content, { extra } = {}) {
+  const tail = extra ? `\n\n${extra}` : '';
+  const body = `${content}${tail}\n\n_Use \`/nhl-add\` or post a bid like \`950k (Team Name)\` in this thread._`;
   try {
     await message.author.send(body);
     return;
@@ -396,8 +404,10 @@ async function handleOpenAuctionBid(message, entry) {
     return { ok: true };
   });
 
-  await deleteUserMessage(message);
-  if (result.error) await notifyBidUser(message, result.error);
+  const removed = await deleteUserMessage(message);
+  const deleteHint = removed ? null : MANAGE_MESSAGES_HINT;
+  if (result.error) await notifyBidUser(message, result.error, { extra: deleteHint });
+  else if (!removed && result.ok) await notifyBidUser(message, 'Bid posted.', { extra: deleteHint });
 }
 
 async function markBidEdited(threadId, authorId) {

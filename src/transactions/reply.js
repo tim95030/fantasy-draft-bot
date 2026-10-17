@@ -17,7 +17,8 @@ function explainDiscordAccessError(err, channelId, channelName) {
     return (
       `**Missing access** posting to **${channelName || 'FA channel'}** (\`${channelId}\`). ` +
       'Commish: on **#nhl-adds** / **#ahl-adds** / **#drops**, allow the **bot role**: ' +
-      '**View Channel**, **Send Messages in Threads**, **Create Public Threads**, **Manage Threads** ' +
+      '**View Channel**, **Send Messages in Threads**, **Create Public Threads**, **Manage Threads**, **Manage Messages** ' +
+      '(**Manage Messages** is required to remove raw in-thread bids/years and post the official line). ' +
       '(**Send Messages** on the channel helps on some servers). ' +
       'GMs still need **View Channel** to open thread links.'
     );
