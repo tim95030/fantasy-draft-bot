@@ -1,6 +1,6 @@
 {
   "name": "fantasy-draft-bot",
-  "version": "1.5.28",
+  "version": "1.5.29",
   "description": "Local Discord bot for mid-draft fantasy drafts (snake order, player pool, skip catch-up)",
   "main": "src/index.js",
   "type": "commonjs",

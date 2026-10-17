@@ -8,6 +8,7 @@ const common = require('../transactions/common');
 const { validateBidAmount, formatBidLine } = require('../transactions/bids');
 const { applyBid, scheduleClose } = require('../transactions/auctions');
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
+const { txnSuccessReply, explainDiscordAccessError } = require('../transactions/reply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -105,7 +106,13 @@ module.exports = {
         }
       }
 
-      const channel = await interaction.client.channels.fetch(common.targetChannelId('nhl', cfg));
+      const channelId = common.targetChannelId('nhl', cfg);
+      let channel;
+      try {
+        channel = await interaction.client.channels.fetch(channelId);
+      } catch (err) {
+        throw new Error(explainDiscordAccessError(err, channelId, '#nhl-adds'));
+      }
       const label = playerLabel(player);
       const line = formatBidLine(amount, interaction.user.id, team.teamName);
 
