@@ -49,7 +49,7 @@ Any team owner can build a personal **pick queue** (max 25). Queues are **per fa
 /draft-queue autodraft enabled:True
 ```
 
-- If you own more than one team, pass `for_team` (autocomplete).
+- If you own more than one team, pass `for_team` (autocomplete). Draft **admins** can pass `for_team` for **any** team on `/nhl-add` and `/ahl-add` (bid/add is credited to that team’s owner).
 - With **autodraft ON**, when your team comes on the clock the bot submits the first **still-available** queued player, posts `Autodrafted …`, and advances. Taken/missing names are dropped from the queue automatically.
 - Autodraft does **not** claim open skips — only the on-clock slot.
 - Autodraft still fires during sleep hours (draft keeps moving for queued teams).

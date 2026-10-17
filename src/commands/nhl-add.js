@@ -27,7 +27,7 @@ module.exports = {
     .addStringOption((o) =>
       o
         .setName('for_team')
-        .setDescription('Only if you own more than one team')
+        .setDescription('Your team if you own several; admins can pick any team')
         .setAutocomplete(true),
     ),
 
@@ -59,7 +59,7 @@ module.exports = {
       await interaction.reply({ content: fa, ephemeral: true });
       return;
     }
-    const { team, error } = common.resolveTeam(interaction);
+    const { team, actingUserId, error } = common.resolveTeam(interaction);
     if (error) {
       await interaction.reply({ content: error, ephemeral: true });
       return;
@@ -114,7 +114,7 @@ module.exports = {
         throw new Error(explainDiscordAccessError(err, channelId, '#nhl-adds'));
       }
       const label = playerLabel(player);
-      const line = formatBidLine(amount, interaction.user.id, team.teamName);
+      const line = formatBidLine(amount, actingUserId, team.teamName);
 
       const result = await threads.withLock(threads.registryKey('nhl', id), async () => {
         const existing = await threads.findThread(interaction.client, 'nhl', id, channel.id);
@@ -130,11 +130,11 @@ module.exports = {
             kind: 'nhl',
             playerId: id,
             amount,
-            userId: interaction.user.id,
+            userId: actingUserId,
             teamName: team.teamName,
           });
           if (bid.error) return { error: bid.error, thread: existing };
-          const msg = await threads.postInThread(existing, line, [interaction.user.id]);
+          const msg = await threads.postInThread(existing, line, [actingUserId]);
           registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
           return { thread: existing, created: false, previous: prevHigh };
         }
@@ -154,11 +154,11 @@ module.exports = {
           kind: 'nhl',
           playerId: id,
           amount,
-          userId: interaction.user.id,
+          userId: actingUserId,
           teamName: team.teamName,
         });
         if (bid.error) return { error: bid.error, thread };
-        const msg = await threads.postInThread(thread, line, [interaction.user.id]);
+        const msg = await threads.postInThread(thread, line, [actingUserId]);
         registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
         scheduleClose(registry.getEntry('nhl', id));
         return { thread, created: true };
@@ -170,20 +170,38 @@ module.exports = {
         return;
       }
       if (result.created) {
-        audit('txn.nhl_add', {
+        const auditRow = {
           fantraxId: `i${id}`,
           player: label,
           amount,
           teamName: team.teamName,
-          by: interaction.user.id,
+          by: actingUserId,
           threadId: result.thread.id,
-        });
+        };
+        if (String(actingUserId) !== String(interaction.user.id)) {
+          auditRow.commandBy = interaction.user.id;
+        }
+        audit('txn.nhl_add', auditRow);
       }
-      await interaction.editReply(
-        `${result.created ? 'Opened' : 'Bid posted in'} ${result.thread} — **${formatSalary(amount)}** for ${label}.`,
+      const proxy =
+        String(actingUserId) !== String(interaction.user.id)
+          ? ` for <@${actingUserId}> (**${team.teamName}**)`
+          : '';
+      const summary = txnSuccessReply(
+        interaction,
+        channel,
+        result.thread,
+        `${result.created ? 'Opened' : 'Bid posted in'} auction — **${formatSalary(amount)}** for ${label}${proxy}.`,
       );
+      try {
+        await interaction.editReply(summary);
+      } catch (err) {
+        await interaction.editReply(
+          txnSuccessReply(interaction, channel, null, `Bid saved — **${formatSalary(amount)}** for ${label}.`),
+        );
+      }
     } catch (err) {
-      await interaction.editReply(err.message);
+      await interaction.editReply(explainDiscordAccessError(err, common.targetChannelId('nhl', cfg), '#nhl-adds'));
     }
   },
 };

@@ -21,7 +21,7 @@ module.exports = {
     .addStringOption((o) =>
       o
         .setName('for_team')
-        .setDescription('Only if you own more than one team')
+        .setDescription('Your team if you own several; admins can pick any team')
         .setAutocomplete(true),
     ),
 
@@ -52,7 +52,7 @@ module.exports = {
       await interaction.reply({ content: fa, ephemeral: true });
       return;
     }
-    const { team, error } = common.resolveTeam(interaction);
+    const { team, actingUserId, error } = common.resolveTeam(interaction);
     if (error) {
       await interaction.reply({ content: error, ephemeral: true });
       return;
@@ -93,8 +93,8 @@ module.exports = {
         });
         await threads.postInThread(
           thread,
-          `${team.teamName} add ${player.name} — <@${interaction.user.id}>`,
-          [interaction.user.id],
+          `${team.teamName} add ${player.name} — <@${actingUserId}>`,
+          [actingUserId],
         );
         return { thread };
       });
@@ -103,14 +103,24 @@ module.exports = {
         await interaction.editReply(`${result.error} ${result.thread}`);
         return;
       }
-      audit('txn.ahl_add', {
+      const auditRow = {
         fantraxId: `i${id}`,
         player: label,
         teamName: team.teamName,
-        by: interaction.user.id,
+        by: actingUserId,
         threadId: result.thread.id,
-      });
-      await interaction.editReply(`Opened ${result.thread} — ${team.teamName} add ${player.name}.`);
+      };
+      if (String(actingUserId) !== String(interaction.user.id)) {
+        auditRow.commandBy = interaction.user.id;
+      }
+      audit('txn.ahl_add', auditRow);
+      const proxy =
+        String(actingUserId) !== String(interaction.user.id)
+          ? ` (for <@${actingUserId}>)`
+          : '';
+      await interaction.editReply(
+        `Opened ${result.thread} — ${team.teamName} add ${player.name}${proxy}.`,
+      );
     } catch (err) {
       await interaction.editReply(err.message);
     }

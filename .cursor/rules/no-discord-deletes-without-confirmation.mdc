@@ -1,0 +1,27 @@
+---
+description: Never delete Discord messages, threads, or channels without explicit user confirmation.
+alwaysApply: true
+---
+
+# No Discord deletes without confirmation
+
+This bot runs against a **live league Discord**. Deletions are irreversible (Discord does not restore message content).
+
+## Hard rules
+
+- **Never** delete (or run scripts that delete) Discord **threads**, **messages**, **channels**, or **reactions** unless the user explicitly asked to delete **that specific** item in the current conversation.
+- **Never** batch-delete by name pattern (e.g. matching player names) without the user listing each target and confirming.
+- **Before** any approved delete: **export** thread message history to a local file or paste a summary for the user when content might matter (auctions, bids, commish notes).
+- Prefer **archive**, **lock**, or **registry fixes** over deletion when cleaning up permission or duplicate-thread issues.
+- Do **not** interpret vague cues ("like perm-test-delete-me") as permission to delete similarly named **real** auction threads.
+
+## Allowed without extra confirmation
+
+- Read-only API calls (fetch channel, list threads, fetch messages, audit where permitted).
+- Deleting **only** resources the user just created in the same message for testing (e.g. "delete the thread you just created named X") when **X** is unambiguous.
+
+## If cleanup is needed
+
+1. List candidates (name, id, created time, registry key).
+2. Ask the user which ids to remove.
+3. Dump messages, then delete only what they confirm.
