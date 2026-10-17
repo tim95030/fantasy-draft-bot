@@ -6,7 +6,7 @@ const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { validateBidAmount, formatBidLine } = require('../transactions/bids');
-const { applyBid, scheduleClose } = require('../transactions/auctions');
+const { applyBid, scheduleClose, syncHighBidFromThread } = require('../transactions/auctions');
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
 const { txnSuccessReply, explainDiscordAccessError } = require('../transactions/reply');
 
@@ -118,7 +118,11 @@ module.exports = {
 
       const result = await threads.withLock(threads.registryKey('nhl', id), async () => {
         const existing = await threads.findThread(interaction.client, 'nhl', id, channel.id);
-        const prevHigh = registry.getEntry('nhl', id)?.highBid?.amount || 0;
+        let regEntry = registry.getEntry('nhl', id);
+        if (existing && regEntry) {
+          regEntry = await syncHighBidFromThread(existing, regEntry);
+        }
+        const prevHigh = regEntry?.highBid?.amount || 0;
         const amountErr = validateBidAmount(amount, prevHigh, cfg);
         if (amountErr) return { error: amountErr, thread: existing };
 

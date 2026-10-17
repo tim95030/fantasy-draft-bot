@@ -111,6 +111,16 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
   return best;
 }
 
+/** Legacy / pre-registry threads: treat validated thread history as authoritative floor. */
+async function syncHighBidFromThread(thread, entry) {
+  if (!thread || !entry?.playerId) return entry;
+  const scanned = await scanThreadForHighBid(thread, entry.ineligibleUserIds || []);
+  const regAmt = entry.highBid?.amount || 0;
+  if (!scanned?.amount || scanned.amount <= regAmt) return entry;
+  registry.upsertEntry('nhl', entry.playerId, { highBid: scanned });
+  return registry.getEntry('nhl', entry.playerId);
+}
+
 async function applyBid({ kind, playerId, amount, userId, teamName, messageId }) {
   if (kind !== 'nhl') return { error: 'Only NHL auctions use bidding.' };
   const cfg = txnConfig();
@@ -391,7 +401,8 @@ async function handleOpenAuctionBid(message, entry) {
   const amount = parsed.amount;
   let teamName = resolveBidTeamName(message, content);
 
-  const fresh = registry.getEntry('nhl', entry.playerId) || entry;
+  let fresh = registry.getEntry('nhl', entry.playerId) || entry;
+  fresh = await syncHighBidFromThread(message.channel, fresh);
   const prevHigh = fresh.highBid?.amount || 0;
   const amountErr = validateBidAmount(amount, prevHigh, cfg);
   if (amountErr) {
@@ -409,10 +420,11 @@ async function handleOpenAuctionBid(message, entry) {
   }
 
   const result = await threads.withLock(threads.registryKey('nhl', entry.playerId), async () => {
-    const current = registry.getEntry('nhl', entry.playerId);
+    let current = registry.getEntry('nhl', entry.playerId);
     if (!current || current.status !== 'open') {
       return { error: 'This auction is not open.' };
     }
+    current = await syncHighBidFromThread(message.channel, current);
     const liveHigh = current.highBid?.amount || 0;
     const liveErr = validateBidAmount(amount, liveHigh, cfg);
     if (liveErr) return { error: liveErr };
@@ -487,5 +499,6 @@ module.exports = {
   handleThreadMessage,
   entryByThreadId,
   scanThreadForHighBid,
+  syncHighBidFromThread,
   formatBidLine,
 };
