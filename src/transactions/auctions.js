@@ -10,7 +10,8 @@ const {
 const registry = require('./registry');
 const { txnConfig } = require('./common');
 const { loadOrder, findTeamsForUser } = require('../draft/order');
-const { postInThread } = require('./threads');
+const threads = require('./threads');
+const { postInThread } = threads;
 const { setWinnerOnlyPosting, clearThreadPostingOverrides } = require('./threadPerms');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -275,6 +276,102 @@ function startScheduler() {
   tickTimer = setInterval(() => tick().catch((e) => console.error(e.message)), TICK_MS);
 }
 
+async function deleteUserMessage(message) {
+  try {
+    if (message.deletable) await message.delete();
+  } catch {
+    // Missing Manage Messages
+  }
+}
+
+async function notifyBidUser(message, content) {
+  const body = `${content}\n\n_Use \`/nhl-add\` or post a bid like \`950k (Team Name)\` in this thread._`;
+  try {
+    await message.author.send(body);
+    return;
+  } catch {
+    // DMs closed
+  }
+  try {
+    const reply = await message.channel.send({
+      content: `<@${message.author.id}> ${content}`,
+      allowedMentions: { users: [message.author.id] },
+    });
+    setTimeout(() => {
+      reply.delete().catch(() => {});
+    }, 45_000);
+  } catch {
+    // ignore
+  }
+}
+
+function resolveBidTeamName(message, content) {
+  const teamMatch = String(content).match(/\(([^)]+)\)\s*$/);
+  if (teamMatch) return teamMatch[1].trim();
+  const owned = findTeamsForUser(loadOrder(), message.author.id);
+  if (owned.length === 1) return owned[0].teamName;
+  return null;
+}
+
+async function handleOpenAuctionBid(message, entry) {
+  const content = String(message.content || '').trim();
+  const parsed = parseBidMessage(content);
+  if (!parsed?.amount) {
+    await deleteUserMessage(message);
+    return;
+  }
+
+  const cfg = txnConfig();
+  const amount = parsed.amount;
+  let teamName = resolveBidTeamName(message, content);
+
+  const fresh = registry.getEntry('nhl', entry.playerId) || entry;
+  const prevHigh = fresh.highBid?.amount || 0;
+  const amountErr = validateBidAmount(amount, prevHigh, cfg);
+  if (amountErr) {
+    await deleteUserMessage(message);
+    await notifyBidUser(message, amountErr);
+    return;
+  }
+  if (!teamName) {
+    await deleteUserMessage(message);
+    await notifyBidUser(
+      message,
+      'Include your fantasy team at the end, e.g. `950k (New York Rangers)`, or use `/nhl-add`.',
+    );
+    return;
+  }
+
+  const result = await threads.withLock(threads.registryKey('nhl', entry.playerId), async () => {
+    const current = registry.getEntry('nhl', entry.playerId);
+    if (!current || current.status !== 'open') {
+      return { error: 'This auction is not open.' };
+    }
+    const liveHigh = current.highBid?.amount || 0;
+    const liveErr = validateBidAmount(amount, liveHigh, cfg);
+    if (liveErr) return { error: liveErr };
+
+    const bid = await applyBid({
+      kind: 'nhl',
+      playerId: entry.playerId,
+      amount,
+      userId: message.author.id,
+      teamName,
+    });
+    if (bid.error) return { error: bid.error };
+
+    const line = formatBidLine(amount, message.author.id, teamName);
+    const posted = await postInThread(message.channel, line, [message.author.id]);
+    registry.upsertEntry('nhl', entry.playerId, {
+      highBid: { ...registry.getEntry('nhl', entry.playerId).highBid, messageId: posted.id },
+    });
+    return { ok: true };
+  });
+
+  await deleteUserMessage(message);
+  if (result.error) await notifyBidUser(message, result.error);
+}
+
 async function markBidEdited(threadId, authorId) {
   const entry = entryByThreadId(threadId);
   if (!entry || entry.status !== 'open') return;
@@ -303,46 +400,7 @@ async function handleThreadMessage(message) {
   if (entry.status === 'won') return;
   if (entry.status !== 'open') return;
 
-  const parsed = parseBidMessage(message.content);
-  if (!parsed?.amount) return;
-
-  const cfg = txnConfig();
-  const prevHigh = entry.highBid?.amount || 0;
-  const amountErr = validateBidAmount(parsed.amount, prevHigh, cfg);
-  if (amountErr) {
-    await message.reply({ content: amountErr, allowedMentions: { parse: [] } }).catch(() => {});
-    return;
-  }
-
-  let teamName = null;
-  const teamMatch = String(message.content).match(/\(([^)]+)\)\s*$/);
-  if (teamMatch) teamName = teamMatch[1].trim();
-  if (!teamName) {
-    const owned = findTeamsForUser(loadOrder(), message.author.id);
-    if (owned.length === 1) teamName = owned[0].teamName;
-  }
-  if (!teamName) {
-    await message
-      .reply({
-        content:
-          'Include your team at the end, e.g. `950k — @you (New York Rangers)`, or use `/nhl-add`.',
-        allowedMentions: { parse: [] },
-      })
-      .catch(() => {});
-    return;
-  }
-
-  const result = await applyBid({
-    kind: 'nhl',
-    playerId: entry.playerId,
-    amount: parsed.amount,
-    userId: message.author.id,
-    teamName,
-    messageId: message.id,
-  });
-  if (result.error) {
-    await message.reply({ content: result.error, allowedMentions: { parse: [] } }).catch(() => {});
-  }
+  await handleOpenAuctionBid(message, entry);
 }
 
 module.exports = {
