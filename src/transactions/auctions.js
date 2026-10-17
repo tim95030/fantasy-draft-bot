@@ -114,6 +114,7 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
 /** Legacy / pre-registry threads: treat validated thread history as authoritative floor. */
 async function syncHighBidFromThread(thread, entry) {
   if (!thread || !entry?.playerId) return entry;
+  if (entry.highBidManual) return entry;
   const scanned = await scanThreadForHighBid(thread, entry.ineligibleUserIds || []);
   const regAmt = entry.highBid?.amount || 0;
   if (!scanned?.amount || scanned.amount <= regAmt) return entry;
@@ -146,7 +147,7 @@ async function applyBid({ kind, playerId, amount, userId, teamName, messageId })
     messageId: messageId || null,
     at: new Date().toISOString(),
   };
-  registry.upsertEntry('nhl', playerId, { highBid, closeAt });
+  registry.upsertEntry('nhl', playerId, { highBid, closeAt, highBidManual: false });
   const updated = registry.getEntry('nhl', playerId);
   scheduleClose(updated);
 
