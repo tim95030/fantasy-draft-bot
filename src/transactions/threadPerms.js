@@ -1,7 +1,25 @@
 const { PermissionFlagsBits, OverwriteType } = require('discord.js');
 
+const THREAD_VIEW = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory];
+
 async function ensureActive(thread) {
   if (thread.archived) await thread.setArchived(false);
+}
+
+/** Public threads: @everyone can read (posting still controlled by channel / auction rules). */
+async function ensureEveryoneCanViewThread(thread) {
+  const guild = thread.guild;
+  if (!guild) return false;
+  try {
+    await ensureActive(thread);
+    await thread.permissionOverwrites.edit(guild.roles.everyone.id, {
+      allow: THREAD_VIEW,
+    });
+    return true;
+  } catch (err) {
+    console.warn('ensureEveryoneCanViewThread failed:', err.message);
+    return false;
+  }
 }
 
 /**
@@ -15,9 +33,10 @@ async function setWinnerOnlyPosting(thread, winnerUserId) {
     await ensureActive(thread);
     const everyoneId = guild.roles.everyone.id;
     await thread.permissionOverwrites.edit(everyoneId, {
+      allow: THREAD_VIEW,
       deny: [PermissionFlagsBits.SendMessagesInThreads],
     });
-    const allow = [PermissionFlagsBits.SendMessagesInThreads];
+    const allow = [...THREAD_VIEW, PermissionFlagsBits.SendMessagesInThreads];
     const existing = thread.permissionOverwrites.cache.get(winnerUserId);
     if (existing) {
       await existing.edit({ allow, deny: [] });
@@ -48,4 +67,8 @@ async function clearThreadPostingOverrides(thread, winnerUserId) {
   }
 }
 
-module.exports = { setWinnerOnlyPosting, clearThreadPostingOverrides };
+module.exports = {
+  ensureEveryoneCanViewThread,
+  setWinnerOnlyPosting,
+  clearThreadPostingOverrides,
+};

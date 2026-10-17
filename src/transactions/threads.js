@@ -1,5 +1,7 @@
+const { ChannelType } = require('discord.js');
 const registry = require('./registry');
 const { parseBidFromMessage } = require('./bids');
+const { ensureEveryoneCanViewThread } = require('./threadPerms');
 
 const AUTO_ARCHIVE_MIN = 10080;
 const MAX_SCAN_MESSAGES = 1000;
@@ -32,9 +34,11 @@ async function findThread(client, kind, playerId, channelId) {
 async function createThread(channel, { kind, playerId, title, reason, meta = {} }) {
   const thread = await channel.threads.create({
     name: title.slice(0, 100),
+    type: ChannelType.PublicThread,
     autoArchiveDuration: AUTO_ARCHIVE_MIN,
     reason,
   });
+  await ensureEveryoneCanViewThread(thread);
   registry.upsertEntry(kind, playerId, {
     threadId: thread.id,
     channelId: channel.id,
