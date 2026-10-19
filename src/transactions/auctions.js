@@ -479,7 +479,6 @@ async function markBidEdited(threadId, authorId) {
 
 async function handleThreadMessage(message) {
   if (!message.guild || message.author?.bot) return;
-  if (isTxnCommish(message.author.id)) return;
   const entry = entryByThreadId(message.channel.id);
   if (!entry) return;
 
@@ -487,6 +486,9 @@ async function handleThreadMessage(message) {
     await handleWinnerYears(message, entry);
     return;
   }
+
+  if (isTxnCommish(message.author.id)) return;
+
   if (entry.status === 'won') {
     await deleteUserMessage(message);
     return;
