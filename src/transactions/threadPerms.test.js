@@ -1,8 +1,30 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { PermissionFlagsBits, OverwriteType } = require('discord.js');
-const { COMMISH_THREAD_ALLOW, ensureCommishThreadAccess } = require('./threadPerms');
-const { isTxnCommish, loadConfig, saveConfig, DEFAULTS } = require('../config');
+const { COMMISH_THREAD_ALLOW, ensureCommishThreadAccess, upsertThreadOverwrite } = require('./threadPerms');
+const { isTxnCommish, loadConfig, saveConfig } = require('../config');
+
+function mockThread({ puts = [], memberAdds = [] } = {}) {
+  return {
+    id: 'thread1',
+    guild: { id: 'g1', roles: { everyone: { id: 'everyone' } } },
+    archived: false,
+    setArchived: async () => {},
+    members: {
+      add: async (id) => {
+        memberAdds.push(id);
+      },
+    },
+    client: {
+      rest: {
+        put: async (route, { body }) => {
+          puts.push({ route, body });
+        },
+        delete: async () => {},
+      },
+    },
+  };
+}
 
 test('COMMISH_THREAD_ALLOW grants view, send in threads, and manage threads', () => {
   assert.ok(COMMISH_THREAD_ALLOW.includes(PermissionFlagsBits.ViewChannel));
@@ -10,52 +32,26 @@ test('COMMISH_THREAD_ALLOW grants view, send in threads, and manage threads', ()
   assert.ok(COMMISH_THREAD_ALLOW.includes(PermissionFlagsBits.ManageThreads));
 });
 
-test('ensureCommishThreadAccess creates member overwrites for each commish id', async () => {
-  const created = [];
-  const thread = {
-    guild: { id: 'g1' },
-    archived: false,
-    setArchived: async () => {},
-    permissionOverwrites: {
-      cache: new Map(),
-      create: async (opts) => {
-        created.push(opts);
-      },
-    },
-  };
+test('ensureCommishThreadAccess adds members and REST overwrites', async () => {
+  const puts = [];
+  const memberAdds = [];
+  const thread = mockThread({ puts, memberAdds });
   const ok = await ensureCommishThreadAccess(thread, ['111', '222']);
   assert.equal(ok, true);
-  assert.equal(created.length, 2);
-  assert.deepEqual(created[0], {
-    id: '111',
-    type: OverwriteType.Member,
-    allow: COMMISH_THREAD_ALLOW,
-  });
-  assert.deepEqual(created[1].id, '222');
+  assert.deepEqual(memberAdds, ['111', '222']);
+  const memberPuts = puts.filter((p) => p.body.type === OverwriteType.Member);
+  assert.equal(memberPuts.length, 2);
+  assert.equal(memberPuts[0].body.id, '111');
 });
 
-test('ensureCommishThreadAccess edits existing overwrites', async () => {
-  const edits = [];
-  const memberId = '333';
-  const existing = {
-    edit: async (opts) => {
-      edits.push(opts);
-    },
-  };
-  const thread = {
-    guild: { id: 'g1' },
-    archived: false,
-    setArchived: async () => {},
-    permissionOverwrites: {
-      cache: new Map([[memberId, existing]]),
-      create: async () => {
-        throw new Error('should not create');
-      },
-    },
-  };
-  await ensureCommishThreadAccess(thread, [memberId]);
-  assert.equal(edits.length, 1);
-  assert.deepEqual(edits[0], { allow: COMMISH_THREAD_ALLOW, deny: [] });
+test('upsertThreadOverwrite uses channel permission REST route', async () => {
+  const puts = [];
+  const thread = mockThread({ puts });
+  await upsertThreadOverwrite(thread, 'role1', OverwriteType.Role, {
+    allow: [PermissionFlagsBits.ViewChannel],
+  });
+  assert.equal(puts.length, 1);
+  assert.match(puts[0].route, /permissions\/role1/);
 });
 
 test('isTxnCommish reads transactions.commishUserIds from config', () => {

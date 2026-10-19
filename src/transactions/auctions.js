@@ -201,9 +201,8 @@ async function closeAuction(playerId) {
     await postInThread(thread, line, [winner.userId]);
     const winnerOnly = await setWinnerOnlyPosting(thread, winner.userId);
     if (!winnerOnly) {
-      await postInThread(
-        thread,
-        '_Could not restrict this thread to the winner only — grant the bot **Manage Threads** on the parent channel._',
+      console.warn(
+        `setWinnerOnlyPosting failed for thread ${entry.threadId}; non-winner posts are still removed by the bot.`,
       );
     }
     audit('txn.nhl_won', {
