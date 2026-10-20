@@ -1,29 +1,60 @@
 const { PermissionFlagsBits } = require('discord.js');
 
-/** Ephemeral success text — omit thread link if the member cannot view the FA channel. */
-function txnSuccessReply(interaction, channel, thread, bodyWithoutThread) {
-  const member = interaction.member;
-  const canView =
-    channel && member && channel.permissionsFor(member)?.has(PermissionFlagsBits.ViewChannel);
+/** Shown when we omit a thread link because the member cannot view the FA channel. */
+const GM_FA_ACCESS_HINT =
+  'Discord **Missing Access** on a thread usually means your role cannot see that FA channel. ' +
+  'Ask commish for **View Channel** and **Send Messages in Threads** on **#nhl-adds**, **#ahl-adds**, and **#drops**. ' +
+  'Slash commands work from any channel; auction threads only live in those channels.';
+
+function explainBotFaChannelAccess(channelId, channelLabel) {
+  return (
+    `The bot cannot post in **${channelLabel || 'FA channel'}** (\`${channelId}\`). ` +
+    'Commish: on that channel, allow the **bot role**: **View Channel**, **Send Messages in Threads**, ' +
+    '**Create Public Threads**, **Manage Threads**, **Manage Messages** (and **Send Messages** on the parent channel on some servers).'
+  );
+}
+
+async function memberCanViewFaChannel(interaction, channel) {
+  if (!channel?.guild || !interaction.user?.id) return false;
+  const member = await channel.guild.members.fetch(interaction.user.id).catch(() => null);
+  return member?.permissionsIn(channel)?.has(PermissionFlagsBits.ViewChannel) ?? false;
+}
+
+/** Ephemeral success — omit thread link if the member cannot view the FA parent channel. */
+async function txnSuccessReply(interaction, channel, thread, bodyWithoutThread) {
+  const canView = await memberCanViewFaChannel(interaction, channel);
   if (canView && thread) {
     return `${bodyWithoutThread} ${thread}`;
   }
   const name = channel?.name ? `#${channel.name}` : 'the FA channel';
-  return `${bodyWithoutThread} for **${name}**. If you cannot see the thread, ask commish for **View Channel** on that channel.`;
+  return `${bodyWithoutThread} in **${name}**. ${GM_FA_ACCESS_HINT}`;
 }
 
+function formatTxnCommandError(err, channelId, channelLabel) {
+  const code = err?.code ?? err?.rawError?.code;
+  const msg = String(err?.message || '');
+  if (code === 50001 || /missing access/i.test(msg)) {
+    return explainBotFaChannelAccess(channelId, channelLabel);
+  }
+  if (err instanceof Error && msg && code === undefined && !err.rawError) {
+    return msg;
+  }
+  return msg || 'Something went wrong.';
+}
+
+/** @deprecated use explainBotFaChannelAccess / formatTxnCommandError */
 function explainDiscordAccessError(err, channelId, channelName) {
   if (err?.code === 50001 || /missing access/i.test(String(err?.message))) {
-    return (
-      `**Missing access** posting to **${channelName || 'FA channel'}** (\`${channelId}\`). ` +
-      'Commish: on **#nhl-adds** / **#ahl-adds** / **#drops**, allow the **bot role**: ' +
-      '**View Channel**, **Send Messages in Threads**, **Create Public Threads**, **Manage Threads**, **Manage Messages** ' +
-      '(**Manage Messages** is required to remove raw in-thread bids/years and post the official line). ' +
-      '(**Send Messages** on the channel helps on some servers). ' +
-      'GMs still need **View Channel** to open thread links.'
-    );
+    return explainBotFaChannelAccess(channelId, channelName);
   }
   return err?.message || 'Something went wrong.';
 }
 
-module.exports = { txnSuccessReply, explainDiscordAccessError };
+module.exports = {
+  GM_FA_ACCESS_HINT,
+  memberCanViewFaChannel,
+  txnSuccessReply,
+  formatTxnCommandError,
+  explainBotFaChannelAccess,
+  explainDiscordAccessError,
+};

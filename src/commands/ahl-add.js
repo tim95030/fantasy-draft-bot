@@ -6,6 +6,7 @@ const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { playerLabel } = require('../transactions/format');
+const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -78,7 +79,13 @@ module.exports = {
         );
       }
 
-      const channel = await interaction.client.channels.fetch(common.targetChannelId('ahl', cfg));
+      const channelId = common.targetChannelId('ahl', cfg);
+      let channel;
+      try {
+        channel = await interaction.client.channels.fetch(channelId);
+      } catch {
+        throw new Error(explainBotFaChannelAccess(channelId, '#ahl-adds'));
+      }
       const label = playerLabel(player);
 
       const result = await threads.withLock(threads.registryKey('ahl', id), async () => {
@@ -119,10 +126,15 @@ module.exports = {
           ? ` (for <@${actingUserId}>)`
           : '';
       await interaction.editReply(
-        `Opened ${result.thread} — ${team.teamName} add ${player.name}${proxy}.`,
+        await txnSuccessReply(
+          interaction,
+          channel,
+          result.thread,
+          `Opened AHL add — **${team.teamName}** add **${player.name}**${proxy}.`,
+        ),
       );
     } catch (err) {
-      await interaction.editReply(err.message);
+      await interaction.editReply(formatTxnCommandError(err, common.targetChannelId('ahl', cfg), '#ahl-adds'));
     }
   },
 };

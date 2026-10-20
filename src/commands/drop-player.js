@@ -6,6 +6,7 @@ const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { contractLabel, playerLabel } = require('../transactions/format');
+const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -83,7 +84,13 @@ module.exports = {
       const player = snap.directory.get(id) || { id, name: id, position: item.position, team: '' };
       const label = playerLabel(player);
       const contract = contractLabel(item);
-      const channel = await interaction.client.channels.fetch(common.targetChannelId('drop', cfg));
+      const channelId = common.targetChannelId('drop', cfg);
+      let channel;
+      try {
+        channel = await interaction.client.channels.fetch(channelId);
+      } catch {
+        throw new Error(explainBotFaChannelAccess(channelId, '#drops'));
+      }
 
       const result = await threads.withLock(threads.registryKey('drop', id), async () => {
         const existing = await threads.findThread(interaction.client, 'drop', id, channel.id);
@@ -116,9 +123,16 @@ module.exports = {
         by: interaction.user.id,
         threadId: result.thread.id,
       });
-      await interaction.editReply(`Opened ${result.thread} — dropping ${player.name} (${contract}).`);
+      await interaction.editReply(
+        await txnSuccessReply(
+          interaction,
+          channel,
+          result.thread,
+          `Opened drop thread — **${player.name}** (${contract}).`,
+        ),
+      );
     } catch (err) {
-      await interaction.editReply(err.message);
+      await interaction.editReply(formatTxnCommandError(err, common.targetChannelId('drop', cfg), '#drops'));
     }
   },
 };

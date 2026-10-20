@@ -8,7 +8,7 @@ const common = require('../transactions/common');
 const { validateBidAmount, formatBidLine } = require('../transactions/bids');
 const { applyBid, scheduleClose, syncHighBidFromThread } = require('../transactions/auctions');
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
-const { txnSuccessReply, explainDiscordAccessError } = require('../transactions/reply');
+const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -111,7 +111,7 @@ module.exports = {
       try {
         channel = await interaction.client.channels.fetch(channelId);
       } catch (err) {
-        throw new Error(explainDiscordAccessError(err, channelId, '#nhl-adds'));
+        throw new Error(explainBotFaChannelAccess(channelId, '#nhl-adds'));
       }
       const label = playerLabel(player);
       const line = formatBidLine(amount, actingUserId, team.teamName);
@@ -191,7 +191,7 @@ module.exports = {
         String(actingUserId) !== String(interaction.user.id)
           ? ` for <@${actingUserId}> (**${team.teamName}**)`
           : '';
-      const summary = txnSuccessReply(
+      const summary = await txnSuccessReply(
         interaction,
         channel,
         result.thread,
@@ -201,11 +201,18 @@ module.exports = {
         await interaction.editReply(summary);
       } catch (err) {
         await interaction.editReply(
-          txnSuccessReply(interaction, channel, null, `Bid saved — **${formatSalary(amount)}** for ${label}.`),
+          await txnSuccessReply(
+            interaction,
+            channel,
+            null,
+            `Bid saved — **${formatSalary(amount)}** for ${label}.`,
+          ),
         );
       }
     } catch (err) {
-      await interaction.editReply(explainDiscordAccessError(err, common.targetChannelId('nhl', cfg), '#nhl-adds'));
+      await interaction.editReply(
+        formatTxnCommandError(err, common.targetChannelId('nhl', cfg), '#nhl-adds'),
+      );
     }
   },
 };
