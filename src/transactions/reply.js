@@ -31,8 +31,9 @@ async function txnSuccessReply(interaction, channel, thread, bodyWithoutThread) 
 }
 
 function formatTxnCommandError(err, channelId, channelLabel) {
-  const code = err?.code ?? err?.rawError?.code;
-  const msg = String(err?.message || '');
+  const root = err?.cause || err;
+  const code = root?.code ?? root?.rawError?.code ?? err?.code ?? err?.rawError?.code;
+  const msg = String(err?.message || root?.message || '');
   if (code === 50001 || /missing access/i.test(msg)) {
     return explainBotFaChannelAccess(channelId, channelLabel);
   }

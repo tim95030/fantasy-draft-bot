@@ -92,7 +92,7 @@ Admins can compare Discord picks to live Fantrax team rosters (read-only API). M
 
 Set `FANTRAX_LEAGUE_ID` in the host `.env` (no secret needed for public roster reads).
 
-Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids).
+Debug actions are appended to `data/audit.jsonl` on the host (picks, skips, queue edits, autodraft attempts). Every queue mutation includes `before`/`after` snapshots (add/remove/move/clear, purge-on-draft, peek/startup prune of taken/missing ids). Failed FA commands log **`txn.fail`** with user id, command name, `failureKind` (`validation`, `discord_missing_access`, `discord_missing_permissions`, `error`), serialized Discord error codes, and the exact ephemeral text shown to the user.
 
 ## Adds and drops (practice mode)
 

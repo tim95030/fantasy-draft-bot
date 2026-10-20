@@ -6,7 +6,8 @@ const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { contractLabel, playerLabel } = require('../transactions/format');
-const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
+const { txnSuccessReply } = require('../transactions/reply');
+const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -85,12 +86,7 @@ module.exports = {
       const label = playerLabel(player);
       const contract = contractLabel(item);
       const channelId = common.targetChannelId('drop', cfg);
-      let channel;
-      try {
-        channel = await interaction.client.channels.fetch(channelId);
-      } catch {
-        throw new Error(explainBotFaChannelAccess(channelId, '#drops'));
-      }
+      const channel = await interaction.client.channels.fetch(channelId);
 
       const result = await threads.withLock(threads.registryKey('drop', id), async () => {
         const existing = await threads.findThread(interaction.client, 'drop', id, channel.id);
@@ -111,7 +107,17 @@ module.exports = {
       });
 
       if (result.error) {
-        await interaction.editReply(`${result.error} ${result.thread}`);
+        const userFacing = `${result.error} ${result.thread}`;
+        logTxnUserMessage(interaction, {
+          command: 'drop-player',
+          targetChannelId: channelId,
+          channelLabel: '#drops',
+          teamName: team.teamName,
+          fantraxId: `i${id}`,
+          step: 'withLock',
+          errorMessage: result.error,
+        }, userFacing);
+        await interaction.editReply(userFacing);
         return;
       }
       registry.recordDrop({ teamName: team.teamName, playerId: id, playerName: player.name });
@@ -132,7 +138,15 @@ module.exports = {
         ),
       );
     } catch (err) {
-      await interaction.editReply(formatTxnCommandError(err, common.targetChannelId('drop', cfg), '#drops'));
+      await interaction.editReply(
+        reportTxnCommandFailure(interaction, err, {
+          command: 'drop-player',
+          targetChannelId: common.targetChannelId('drop', cfg),
+          channelLabel: '#drops',
+          teamName: team?.teamName,
+          playerInput: interaction.options.getString('player'),
+        }),
+      );
     }
   },
 };

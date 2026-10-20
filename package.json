@@ -1,6 +1,6 @@
 {
   "name": "fantasy-draft-bot",
-  "version": "1.5.40",
+  "version": "1.5.41",
   "description": "Local Discord bot for mid-draft fantasy drafts (snake order, player pool, skip catch-up)",
   "main": "src/index.js",
   "type": "commonjs",
@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "register-commands": "node src/registerCommands.js",
     "test:parser": "node src/draft/parser.js",
-    "test:thread-perms": "node --test src/transactions/threadPerms.test.js"
+    "test:thread-perms": "node --test src/transactions/threadPerms.test.js",
+    "test:txn-log": "node --test src/transactions/txnLog.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -8,7 +8,8 @@ const common = require('../transactions/common');
 const { validateBidAmount, formatBidLine } = require('../transactions/bids');
 const { applyBid, scheduleClose, syncHighBidFromThread } = require('../transactions/auctions');
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
-const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
+const { txnSuccessReply } = require('../transactions/reply');
+const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -107,12 +108,7 @@ module.exports = {
       }
 
       const channelId = common.targetChannelId('nhl', cfg);
-      let channel;
-      try {
-        channel = await interaction.client.channels.fetch(channelId);
-      } catch (err) {
-        throw new Error(explainBotFaChannelAccess(channelId, '#nhl-adds'));
-      }
+      const channel = await interaction.client.channels.fetch(channelId);
       const label = playerLabel(player);
       const line = formatBidLine(amount, actingUserId, team.teamName);
 
@@ -170,7 +166,18 @@ module.exports = {
 
       if (result.error) {
         const suffix = result.thread ? `\n${result.thread}` : '';
-        await interaction.editReply(`${result.error}${suffix}`);
+        const userFacing = `${result.error}${suffix}`;
+        logTxnUserMessage(interaction, {
+          command: 'nhl-add',
+          targetChannelId: channelId,
+          channelLabel: '#nhl-adds',
+          teamName: team.teamName,
+          fantraxId: `i${id}`,
+          amount,
+          step: 'withLock',
+          errorMessage: result.error,
+        }, userFacing);
+        await interaction.editReply(userFacing);
         return;
       }
       if (result.created) {
@@ -211,7 +218,14 @@ module.exports = {
       }
     } catch (err) {
       await interaction.editReply(
-        formatTxnCommandError(err, common.targetChannelId('nhl', cfg), '#nhl-adds'),
+        reportTxnCommandFailure(interaction, err, {
+          command: 'nhl-add',
+          targetChannelId: common.targetChannelId('nhl', cfg),
+          channelLabel: '#nhl-adds',
+          teamName: team?.teamName,
+          salary: interaction.options.getString('salary'),
+          playerInput: interaction.options.getString('player'),
+        }),
       );
     }
   },

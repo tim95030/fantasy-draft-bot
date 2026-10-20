@@ -6,7 +6,8 @@ const threads = require('../transactions/threads');
 const registry = require('../transactions/registry');
 const common = require('../transactions/common');
 const { playerLabel } = require('../transactions/format');
-const { txnSuccessReply, formatTxnCommandError, explainBotFaChannelAccess } = require('../transactions/reply');
+const { txnSuccessReply } = require('../transactions/reply');
+const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -80,12 +81,7 @@ module.exports = {
       }
 
       const channelId = common.targetChannelId('ahl', cfg);
-      let channel;
-      try {
-        channel = await interaction.client.channels.fetch(channelId);
-      } catch {
-        throw new Error(explainBotFaChannelAccess(channelId, '#ahl-adds'));
-      }
+      const channel = await interaction.client.channels.fetch(channelId);
       const label = playerLabel(player);
 
       const result = await threads.withLock(threads.registryKey('ahl', id), async () => {
@@ -107,7 +103,17 @@ module.exports = {
       });
 
       if (result.error) {
-        await interaction.editReply(`${result.error} ${result.thread}`);
+        const userFacing = `${result.error} ${result.thread}`;
+        logTxnUserMessage(interaction, {
+          command: 'ahl-add',
+          targetChannelId: channelId,
+          channelLabel: '#ahl-adds',
+          teamName: team.teamName,
+          fantraxId: `i${id}`,
+          step: 'withLock',
+          errorMessage: result.error,
+        }, userFacing);
+        await interaction.editReply(userFacing);
         return;
       }
       const auditRow = {
@@ -134,7 +140,15 @@ module.exports = {
         ),
       );
     } catch (err) {
-      await interaction.editReply(formatTxnCommandError(err, common.targetChannelId('ahl', cfg), '#ahl-adds'));
+      await interaction.editReply(
+        reportTxnCommandFailure(interaction, err, {
+          command: 'ahl-add',
+          targetChannelId: common.targetChannelId('ahl', cfg),
+          channelLabel: '#ahl-adds',
+          teamName: team?.teamName,
+          playerInput: interaction.options.getString('player'),
+        }),
+      );
     }
   },
 };

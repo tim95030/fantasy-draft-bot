@@ -1,4 +1,5 @@
 const { loadConfig } = require('../config');
+const { logTxnFailure } = require('./txnLog');
 
 /**
  * Public FA threads inherit #nhl-adds / #ahl-adds / #drops permissions.
@@ -15,7 +16,14 @@ async function addUsersToThreadMembers(thread, userIds) {
     try {
       await thread.members.add(id);
     } catch (err) {
-      console.warn(`thread.members.add(${id}) failed:`, err.message);
+      logTxnFailure({
+        source: 'thread_perms',
+        step: 'thread.members.add',
+        threadId: thread.id,
+        commishUserId: id,
+        failureKind: 'discord',
+        err,
+      });
     }
   }
 }
@@ -35,7 +43,13 @@ async function ensureCommishThreadAccess(thread, commishIds = null) {
     await addUsersToThreadMembers(thread, ids);
     return true;
   } catch (err) {
-    console.warn('ensureCommishThreadAccess failed:', err.message);
+    logTxnFailure({
+      source: 'thread_perms',
+      step: 'ensureCommishThreadAccess',
+      threadId: thread.id,
+      failureKind: 'error',
+      err,
+    });
     return false;
   }
 }
