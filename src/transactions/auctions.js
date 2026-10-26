@@ -81,8 +81,10 @@ function rescheduleAll() {
   for (const entry of registry.listOpenAuctions('nhl')) scheduleClose(entry);
 }
 
-async function scanThreadForHighBid(thread, ineligibleIds = []) {
+async function scanThreadForHighBid(thread, ineligibleIds = [], opts = {}) {
   const ineligible = new Set(ineligibleIds.map(String));
+  const excludeMessageIds = new Set((opts.excludeMessageIds || []).map(String));
+  const botOfficialOnly = opts.botOfficialOnly !== false;
   const cfg = txnConfig();
   let best = null;
   let before;
@@ -94,6 +96,8 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
     if (!batch.size) break;
     const chronological = [...batch.values()].reverse();
     for (const msg of chronological) {
+      if (excludeMessageIds.has(String(msg.id))) continue;
+      if (botOfficialOnly && !msg.author?.bot) continue;
       const parsed = parseBidMessage(msg.content);
       if (!parsed?.amount) continue;
       const amountErr = validateBidAmount(parsed.amount, prevHigh, cfg);
@@ -116,11 +120,14 @@ async function scanThreadForHighBid(thread, ineligibleIds = []) {
   return best;
 }
 
-/** Legacy / pre-registry threads: treat validated thread history as authoritative floor. */
-async function syncHighBidFromThread(thread, entry) {
+/** Reconcile registry high bid from official bot bid lines in the thread (not raw GM posts). */
+async function syncHighBidFromThread(thread, entry, opts = {}) {
   if (!thread || !entry?.playerId) return entry;
   if (entry.highBidManual) return entry;
-  const scanned = await scanThreadForHighBid(thread, entry.ineligibleUserIds || []);
+  const scanned = await scanThreadForHighBid(thread, entry.ineligibleUserIds || [], {
+    botOfficialOnly: true,
+    ...opts,
+  });
   const regAmt = entry.highBid?.amount || 0;
   if (!scanned?.amount || scanned.amount <= regAmt) return entry;
   registry.upsertEntry('nhl', entry.playerId, { highBid: scanned });
@@ -185,7 +192,7 @@ async function closeAuction(playerId) {
   const ineligible = entry.ineligibleUserIds || [];
   let winner = entry.highBid;
   if (winner && ineligible.map(String).includes(String(winner.userId))) winner = null;
-  if (!winner) winner = await scanThreadForHighBid(thread, ineligible);
+  if (!winner) winner = await scanThreadForHighBid(thread, ineligible, { botOfficialOnly: true });
 
   const label = entry.player ? playerLabel(entry.player) : playerId;
   if (winner) {
@@ -408,7 +415,9 @@ async function handleOpenAuctionBid(message, entry) {
   let teamName = resolveBidTeamName(message, content);
 
   let fresh = registry.getEntry('nhl', entry.playerId) || entry;
-  fresh = await syncHighBidFromThread(message.channel, fresh);
+  fresh = await syncHighBidFromThread(message.channel, fresh, {
+    excludeMessageIds: [message.id],
+  });
   const prevHigh = fresh.highBid?.amount || 0;
   const amountErr = validateBidAmount(amount, prevHigh, cfg);
   if (amountErr) {
@@ -430,7 +439,9 @@ async function handleOpenAuctionBid(message, entry) {
     if (!current || current.status !== 'open') {
       return { error: 'This auction is not open.' };
     }
-    current = await syncHighBidFromThread(message.channel, current);
+    current = await syncHighBidFromThread(message.channel, current, {
+      excludeMessageIds: [message.id],
+    });
     const liveHigh = current.highBid?.amount || 0;
     const liveErr = validateBidAmount(amount, liveHigh, cfg);
     if (liveErr) return { error: liveErr };
