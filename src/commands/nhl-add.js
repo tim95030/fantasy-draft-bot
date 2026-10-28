@@ -10,6 +10,7 @@ const { applyBid, scheduleClose, syncHighBidFromThread } = require('../transacti
 const { formatSalary, playerLabel, parseSalary } = require('../transactions/format');
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
+const { staleEntryReason } = require('../transactions/lifecycle');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -87,7 +88,13 @@ module.exports = {
       if (resolved.error) throw new Error(resolved.error);
       const { player, id } = resolved;
 
-      const openEntry = registry.getEntry('nhl', id);
+      let openEntry = registry.getEntry('nhl', id);
+      const staleReason = staleEntryReason(openEntry);
+      if (staleReason) {
+        registry.retireEntry('nhl', id, staleReason);
+        audit('txn.nhl_retired', { fantraxId: `i${id}`, reason: staleReason, threadId: openEntry.threadId });
+        openEntry = null;
+      }
       if (openEntry?.status === 'awaiting_years') {
         throw new Error('This auction has ended and is waiting on the winner’s contract length.');
       }

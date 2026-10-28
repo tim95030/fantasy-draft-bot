@@ -8,6 +8,7 @@ const common = require('../transactions/common');
 const { contractLabel, playerLabel } = require('../transactions/format');
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
+const { staleEntryReason, retireOnDrop } = require('../transactions/lifecycle');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -89,6 +90,9 @@ module.exports = {
       const channel = await interaction.client.channels.fetch(channelId);
 
       const result = await threads.withLock(threads.registryKey('drop', id), async () => {
+        const prevDrop = registry.getEntry('drop', id);
+        const staleReason = staleEntryReason(prevDrop, { dropCooldownHours: cfg.dropCooldownHours ?? 48 });
+        if (staleReason) registry.retireEntry('drop', id, staleReason);
         const existing = await threads.findThread(interaction.client, 'drop', id, channel.id);
         if (existing) return { error: `There's already a drop thread for ${label}:`, thread: existing };
         const thread = await threads.createThread(channel, {
@@ -121,6 +125,9 @@ module.exports = {
         return;
       }
       registry.recordDrop({ teamName: team.teamName, playerId: id, playerName: player.name });
+      for (const kind of ['nhl', 'ahl']) {
+        if (retireOnDrop(registry.getEntry(kind, id))) registry.retireEntry(kind, id, 'dropped');
+      }
       audit('txn.drop', {
         fantraxId: `i${id}`,
         player: label,

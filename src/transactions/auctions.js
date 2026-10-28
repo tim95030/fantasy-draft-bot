@@ -185,7 +185,13 @@ async function closeAuction(playerId) {
   try {
     thread = await client.channels.fetch(entry.threadId);
   } catch {
-    registry.upsertEntry('nhl', playerId, { status: 'closed', closedAt: new Date().toISOString() });
+    registry.retireEntry('nhl', playerId, 'thread_missing_at_close');
+    audit('txn.nhl_retired', {
+      fantraxId: `i${playerId}`,
+      reason: 'thread_missing_at_close',
+      threadId: entry.threadId,
+      highBid: entry.highBid || null,
+    });
     return;
   }
 

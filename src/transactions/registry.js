@@ -6,6 +6,7 @@ const { playerLabel } = require('./format');
 
 const REGISTRY = path.join(paths.DATA, 'transactions.json');
 const DROPS = path.join(paths.DATA, 'transaction-drops.json');
+const HISTORY = path.join(paths.DATA, 'transactions-history.jsonl');
 
 function loadRegistry() {
   if (!fs.existsSync(REGISTRY)) return {};
@@ -36,6 +37,26 @@ function upsertEntry(kind, playerId, patch) {
   reg[key] = { ...prev, ...patch, kind, playerId: fantrax.normalizeFantraxId(playerId) };
   saveRegistry(reg);
   return reg[key];
+}
+
+/** Remove a registry row so the player can be transacted fresh; the old row is kept in HISTORY. */
+function retireEntry(kind, playerId, reason) {
+  const reg = loadRegistry();
+  const key = registryKey(kind, playerId);
+  const prev = reg[key];
+  if (!prev) return null;
+  fs.appendFileSync(
+    HISTORY,
+    `${JSON.stringify({ retiredAt: new Date().toISOString(), reason, key, ...prev })}\n`,
+  );
+  delete reg[key];
+  saveRegistry(reg);
+  return prev;
+}
+
+function entryByThreadId(threadId) {
+  const reg = loadRegistry();
+  return Object.values(reg).find((e) => e.threadId === String(threadId)) || null;
 }
 
 function listOpenAuctions(kind = 'nhl') {
@@ -200,11 +221,14 @@ function searchNhlAutocomplete(snap, query, searchFn) {
 module.exports = {
   REGISTRY,
   DROPS,
+  HISTORY,
   loadRegistry,
   saveRegistry,
   registryKey,
   getEntry,
   upsertEntry,
+  retireEntry,
+  entryByThreadId,
   listOpenAuctions,
   looksLikeFantraxId,
   resolvePlayer,
