@@ -21,13 +21,14 @@ const DEFAULTS = {
   skipAccelEnabled: true,
   /** Hours teams get to fill open skips after the last round. 0 = end immediately. */
   makeupHours: 48,
-  /** /nhl-add, /ahl-add, /drop-player. `practice` = only from + into practiceChannelId. */
+  /** /nhl-add, /ahl-add, /drop-player, /minors-callup. `practice` = only from + into practiceChannelId. */
   transactions: {
     mode: 'live',
     practiceChannelId: '1555323096226070558',
     nhlAddsChannelId: '1549410654245625867',
     ahlAddsChannelId: '1549410712793653308',
     dropsChannelId: '1549410801960493136',
+    callupsChannelId: '1549410769022750891',
     minBid: 850_000,
     bidIncrement: 25_000,
     minRaise: 100_000,

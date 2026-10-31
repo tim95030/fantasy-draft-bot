@@ -12,8 +12,9 @@ const KIND_CHANNEL = {
   nhl: 'nhlAddsChannelId',
   ahl: 'ahlAddsChannelId',
   drop: 'dropsChannelId',
+  callup: 'callupsChannelId',
 };
-const KIND_PREFIX = { nhl: '[NHL]', ahl: '[AHL]', drop: '[DROP]' };
+const KIND_PREFIX = { nhl: '[NHL]', ahl: '[AHL]', drop: '[DROP]', callup: '[CALLUP]' };
 
 function txnConfig() {
   return loadConfig().transactions;

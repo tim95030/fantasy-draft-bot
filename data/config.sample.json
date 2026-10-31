@@ -21,6 +21,7 @@
     "nhlAddsChannelId": "1549410654245625867",
     "ahlAddsChannelId": "1549410712793653308",
     "dropsChannelId": "1549410801960493136",
+    "callupsChannelId": "1549410769022750891",
     "minBid": 850000,
     "bidIncrement": 25000,
     "minRaise": 100000,
