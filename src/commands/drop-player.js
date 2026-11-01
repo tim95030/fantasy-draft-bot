@@ -8,46 +8,55 @@ const { playerLabel } = require('../transactions/format');
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 const { resolveDrop, fileDrop, saveAuctionDrop, teamKey } = require('../transactions/drops');
-
-const AHL_LINK_DAYS = 7;
+const { addLinkOpen } = require('../transactions/lifecycle');
 
 function threadUrl(guildId, threadId) {
   return `https://discord.com/channels/${guildId}/${threadId}`;
 }
 
-/** Open NHL auctions, NHL auctions this team won, and this team's recent AHL claims. */
-function linkableAdds(teamName) {
+/**
+ * Open NHL auctions, NHL auctions this team won, and this team's AHL claims — only while the thread
+ * is still open. Active threads are in the client cache; archived ones are not.
+ */
+function linkableAdds(teamName, client) {
   const key = teamKey(teamName);
-  const cutoff = Date.now() - AHL_LINK_DAYS * 24 * 60 * 60 * 1000;
   const out = [];
   for (const entry of Object.values(registry.loadRegistry())) {
     const name = entry.player ? playerLabel(entry.player) : entry.title || entry.playerId;
+    let choice = null;
     if (entry.kind === 'nhl' && entry.status === 'open') {
-      out.push({ name: `🔨 ${name} (open auction)`, value: `nhl:${entry.playerId}`, entry });
+      choice = `🔨 ${name} (open auction)`;
     } else if (
       entry.kind === 'nhl' &&
       ['awaiting_years', 'won'].includes(entry.status) &&
       teamKey(entry.winner?.teamName) === key
     ) {
-      out.push({ name: `${name} (auction won)`, value: `nhl:${entry.playerId}`, entry });
-    } else if (
-      entry.kind === 'ahl' &&
-      entry.status === 'claimed' &&
-      teamKey(entry.teamName) === key &&
-      Date.parse(entry.createdAt || 0) >= cutoff
-    ) {
-      out.push({ name: `${name} (AHL claim)`, value: `ahl:${entry.playerId}`, entry });
+      choice = `${name} (auction won)`;
+    } else if (entry.kind === 'ahl' && entry.status === 'claimed' && teamKey(entry.teamName) === key) {
+      choice = `${name} (AHL claim)`;
     }
+    if (!choice) continue;
+    if (!addLinkOpen(entry, client?.channels.cache.get(entry.threadId))) continue;
+    out.push({ name: choice, value: `${entry.kind}:${entry.playerId}`, entry });
   }
   return out;
 }
 
+/** Autocomplete value, or a typed name that matches exactly one linkable add. */
+function findLinkableAdd(adds, forAdd) {
+  const exact = adds.find((a) => a.value === forAdd);
+  if (exact) return exact;
+  const q = snapshot.fold(forAdd);
+  const hits = adds.filter((a) => snapshot.fold(a.entry.player?.name || a.entry.title).includes(q));
+  return q && hits.length === 1 ? hits[0] : null;
+}
+
 async function linkDrop(interaction, { team, playerId, forAdd }) {
-  const match = linkableAdds(team.teamName).find((a) => a.value === forAdd);
+  const match = findLinkableAdd(linkableAdds(team.teamName, interaction.client), forAdd);
   if (!match) {
     throw new Error(
       `**${forAdd}** isn't an add you can link a drop to. Pick one from \`for_add\` autocomplete ` +
-        '(open NHL auctions, NHL auctions you won, or your AHL claims from the last week).',
+        '(open NHL auctions, NHL auctions you won, or your AHL claims still open in #ahl-adds).',
     );
   }
   const { entry } = match;
@@ -81,7 +90,7 @@ async function linkDrop(interaction, { team, playerId, forAdd }) {
   if (result.error) return `${result.error} ${result.thread}`;
 
   const addThread = await interaction.client.channels.fetch(entry.threadId).catch(() => null);
-  if (addThread) await threads.postInThread(addThread, `Linked drop: ${result.thread.url}`);
+  if (addLinkOpen(entry, addThread)) await threads.postInThread(addThread, `Linked drop: ${result.thread.url}`);
   if (entry.kind === 'nhl') {
     registry.upsertEntry('nhl', entry.playerId, { linkedDropThreadId: result.thread.id });
   }
@@ -133,7 +142,7 @@ module.exports = {
     const q = snapshot.fold(focused.value);
     if (focused.name === 'for_add') {
       await interaction.respond(
-        linkableAdds(team.teamName)
+        linkableAdds(team.teamName, interaction.client)
           .filter((a) => !q || snapshot.fold(a.name).includes(q))
           .slice(0, 25)
           .map((a) => ({ name: a.name.slice(0, 100), value: a.value })),

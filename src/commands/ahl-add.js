@@ -8,8 +8,8 @@ const common = require('../transactions/common');
 const { playerLabel } = require('../transactions/format');
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
-const { resolveDrop, fileDrop, dropChoices } = require('../transactions/drops');
-const { rosterLimits, countRoster, rosterFull, fullRosterNotice } = require('../transactions/roster');
+const { fileDrop, dropChoices, teamRosterState } = require('../transactions/drops');
+const { rosterFull, fullRosterNotice } = require('../transactions/roster');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -82,7 +82,6 @@ module.exports = {
       const owner = ownership.byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
       const dropId = interaction.options.getString('drop');
-      if (dropId) await resolveDrop(team.teamName, dropId);
       const cooldown = cfg.dropCooldownHours ?? 48;
       if (registry.dropBlocked(team.teamName, id, cooldown)) {
         throw new Error(
@@ -153,24 +152,27 @@ module.exports = {
         `Opened AHL add — **${team.teamName}** add **${player.name}**${proxy}.`,
       );
       if (dropId) {
-        const dropped = await fileDrop({
-          client: interaction.client,
-          teamName: team.teamName,
-          playerId: dropId,
-          byUserId: actingUserId,
-          linkedAddUrl: result.thread.url,
-          reason: `/ahl-add drop by ${interaction.user.tag}`,
-        });
-        if (dropped.error) {
-          summary += `\n\nDrop not filed: ${dropped.error} ${dropped.thread}`;
-        } else {
-          await threads.postInThread(result.thread, `Linked drop: ${dropped.thread.url}`);
-          summary += `\n\nLinked drop filed — **${dropped.drop.player.name}** (${dropped.drop.contract}). ${dropped.thread}`;
+        try {
+          const dropped = await fileDrop({
+            client: interaction.client,
+            teamName: team.teamName,
+            playerId: dropId,
+            byUserId: actingUserId,
+            linkedAddUrl: result.thread.url,
+            reason: `/ahl-add drop by ${interaction.user.tag}`,
+          });
+          if (dropped.error) {
+            summary += `\n\nDrop not filed: ${dropped.error} ${dropped.thread}`;
+          } else {
+            await threads.postInThread(result.thread, `Linked drop: ${dropped.thread.url}`);
+            summary += `\n\nLinked drop filed — **${dropped.drop.player.name}** (${dropped.drop.contract}). ${dropped.thread}`;
+          }
+        } catch (err) {
+          summary += `\n\nDrop not filed: ${err.message}`;
         }
       } else {
         const fxTeam = snapshot.fantraxTeamFor(team.teamName, ownership);
-        const counts = countRoster(fxTeam?.items);
-        const limits = rosterLimits(cfg);
+        const { counts, limits } = teamRosterState(fxTeam, team.teamName, cfg);
         if (fxTeam && rosterFull('ahl', counts, limits)) {
           summary += `\n\n${fullRosterNotice('ahl', counts, limits, player.name)}`;
         }

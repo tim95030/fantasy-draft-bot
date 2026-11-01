@@ -20,8 +20,7 @@ const {
 const { isTxnCommish } = require('../config');
 const fantrax = require('../draft/fantrax');
 const snapshot = require('./snapshot');
-const { fileDrop, auctionDropFor } = require('./drops');
-const { countRoster, rosterLimits } = require('./roster');
+const { fileDrop, auctionDropFor, teamRosterState } = require('./drops');
 const { winnerDropAction } = require('./lifecycle');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -185,7 +184,7 @@ async function winnerRoster(teamName) {
     const ownership = await fantrax.fetchRosterOwnership();
     const fxTeam = snapshot.fantraxTeamFor(teamName, ownership);
     if (!fxTeam) return null;
-    return { items: fxTeam.items, counts: countRoster(fxTeam.items), limits: rosterLimits(txnConfig()) };
+    return teamRosterState(fxTeam, teamName, txnConfig());
   } catch (err) {
     console.warn(`Roster check for ${teamName} failed:`, err.message);
     return null;
@@ -211,8 +210,13 @@ async function fileWinnerDrop(thread, playerId, winner, savedDrop) {
       linkedAddUrl: thread.url,
       reason: `Linked drop for auction ${thread.id}`,
     });
+    if (result.error && result.thread) {
+      registry.upsertEntry('nhl', playerId, { linkedDropThreadId: result.thread.id });
+      await postInThread(thread, `Linked drop (already filed): ${result.thread.url}`);
+      return;
+    }
     if (result.error) {
-      await postInThread(thread, `Linked drop not filed: ${result.error} ${result.thread}`);
+      await postInThread(thread, `Linked drop not filed: ${result.error}`);
       return;
     }
     registry.upsertEntry('nhl', playerId, { linkedDropThreadId: result.thread.id });

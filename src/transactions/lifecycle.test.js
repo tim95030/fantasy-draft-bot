@@ -1,6 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { staleEntryReason, retireOnDrop, retireOnThreadDelete, winnerDropAction } = require('./lifecycle');
+const {
+  staleEntryReason,
+  retireOnDrop,
+  retireOnThreadDelete,
+  winnerDropAction,
+  addLinkOpen,
+} = require('./lifecycle');
 const { auctionDropFor } = require('./drops');
 
 const HOUR = 60 * 60 * 1000;
@@ -38,6 +44,16 @@ test('auction winner drop: file saved drop, flag missing, ask when full, else no
   assert.equal(winnerDropAction({ playerId: 'zzz' }, roster, { pro: 23 }, limits), 'missing');
   assert.equal(winnerDropAction(null, roster, { pro: 23 }, limits), 'needs_drop');
   assert.equal(winnerDropAction(null, roster, { pro: 22 }, limits), 'none');
+});
+
+test('drops can be linked only while the add thread is still open', () => {
+  const ahl = { kind: 'ahl' };
+  const nhl = { kind: 'nhl' };
+  assert.equal(addLinkOpen(ahl, { archived: false, locked: false }), true);
+  assert.equal(addLinkOpen(ahl, { archived: false, locked: true }), false);
+  assert.equal(addLinkOpen(nhl, { archived: false, locked: true }), true);
+  assert.equal(addLinkOpen(nhl, { archived: true, locked: true }), false);
+  assert.equal(addLinkOpen(ahl, undefined), false);
 });
 
 test('saved auction drops are looked up per winning team, ignoring case', () => {

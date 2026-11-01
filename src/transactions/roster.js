@@ -7,12 +7,32 @@ function rosterLimits(cfg = {}) {
   };
 }
 
+const PENDING_DROP_DAYS = 7;
+
+/**
+ * Roster item ids this team has filed a drop for (within the last week) that Fantrax still shows.
+ * They are leaving, so they don't take a spot.
+ */
+function pendingDropIds(drops, teamName, items = [], now = Date.now()) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const cutoff = now - PENDING_DROP_DAYS * 24 * 60 * 60 * 1000;
+  const onRoster = new Set(items.map((i) => i.id));
+  const ids = new Set();
+  for (const d of drops || []) {
+    if (norm(d.teamName) !== norm(teamName)) continue;
+    if (Date.parse(d.at || 0) < cutoff) continue;
+    if (onRoster.has(d.playerId)) ids.add(d.playerId);
+  }
+  return ids;
+}
+
 /** Counts by Fantrax slot: pro = Active + Reserve (IR and Minors excluded), minors = Minors slot. */
-function countRoster(items = []) {
+function countRoster(items = [], { exclude } = {}) {
   let pro = 0;
   let ir = 0;
   let minors = 0;
   for (const item of items) {
+    if (exclude?.has(item.id)) continue;
     if (PRO_STATUSES.has(item.status)) pro++;
     else if (item.status === 'INJURED_RESERVE') ir++;
     else if (item.status === 'MINORS') minors++;
@@ -47,16 +67,17 @@ function spotsLine(counts, limits) {
 }
 
 /** Roster rows split into the NHL list (pro + IR) and the minors list, with display tags. */
-function splitRosterRows(rows) {
+function splitRosterRows(rows, { pendingDrops } = {}) {
   const nhl = [];
   const minors = [];
   for (const row of rows) {
     const status = row.item?.status;
+    const dropTag = pendingDrops?.has(row.item?.id) ? ['drop pending'] : [];
     if (status === 'MINORS') {
-      minors.push({ ...row, tags: [] });
+      minors.push({ ...row, tags: dropTag });
       continue;
     }
-    const tags = [];
+    const tags = [...dropTag];
     if (status === 'INJURED_RESERVE') tags.push('IR');
     if (String(row.item?.contract || '').toLowerCase() === 'minors') tags.push('uncalled minors');
     nhl.push({ ...row, tags });
@@ -64,4 +85,12 @@ function splitRosterRows(rows) {
   return { nhl, minors };
 }
 
-module.exports = { rosterLimits, countRoster, rosterFull, fullRosterNotice, spotsLine, splitRosterRows };
+module.exports = {
+  rosterLimits,
+  pendingDropIds,
+  countRoster,
+  rosterFull,
+  fullRosterNotice,
+  spotsLine,
+  splitRosterRows,
+};

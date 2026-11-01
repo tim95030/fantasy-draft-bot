@@ -2,7 +2,8 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const fantrax = require('../draft/fantrax');
 const snapshot = require('../transactions/snapshot');
 const common = require('../transactions/common');
-const { rosterLimits, countRoster, spotsLine, splitRosterRows } = require('../transactions/roster');
+const { spotsLine, splitRosterRows } = require('../transactions/roster');
+const { teamRosterState } = require('../transactions/drops');
 
 const EMBED_DESCRIPTION_MAX = 4096;
 
@@ -11,8 +12,8 @@ function rowLine(row) {
   return `${row.label} — ${row.contract}${tags}`;
 }
 
-function rosterDescription(teamName, rows, counts, limits) {
-  const { nhl, minors } = splitRosterRows(rows);
+function rosterDescription(teamName, rows, counts, limits, pendingDrops) {
+  const { nhl, minors } = splitRosterRows(rows, { pendingDrops });
   const section = (title, list) => [`**${title} (${list.length})**`, ...(list.length ? list.map(rowLine) : ['_None_'])];
   const lines = [...section('NHL list', nhl), '', ...section('Minors list', minors), '', spotsLine(counts, limits)];
   const text = lines.join('\n');
@@ -53,10 +54,13 @@ module.exports = {
         return;
       }
       const rows = snapshot.rosterRows(fxTeam, snap.directory);
+      const state = teamRosterState(fxTeam, team.teamName);
       const embed = new EmbedBuilder()
         .setTitle(`${team.teamName} roster`)
-        .setDescription(rosterDescription(team.teamName, rows, countRoster(fxTeam.items), rosterLimits(common.txnConfig())))
-        .setFooter({ text: 'From Fantrax (refreshed within the last minute). IR does not use an NHL spot.' });
+        .setDescription(rosterDescription(team.teamName, rows, state.counts, state.limits, state.pendingDrops))
+        .setFooter({
+          text: 'From Fantrax (refreshed within the last minute). IR and players with a drop pending do not use a spot.',
+        });
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       console.error('/my-roster failed:', err);

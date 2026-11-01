@@ -11,8 +11,14 @@ const { formatSalary, playerLabel, parseSalary } = require('../transactions/form
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 const { staleEntryReason } = require('../transactions/lifecycle');
-const { resolveDrop, dropChoices, saveAuctionDrop, auctionDropFor } = require('../transactions/drops');
-const { rosterLimits, countRoster, rosterFull, fullRosterNotice } = require('../transactions/roster');
+const {
+  resolveDrop,
+  dropChoices,
+  teamRosterState,
+  saveAuctionDrop,
+  auctionDropFor,
+} = require('../transactions/drops');
+const { rosterFull, fullRosterNotice } = require('../transactions/roster');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -121,7 +127,15 @@ module.exports = {
       const owner = ownership.byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
       const dropId = interaction.options.getString('drop');
-      const drop = dropId ? await resolveDrop(team.teamName, dropId) : null;
+      let drop = null;
+      let dropError = null;
+      if (dropId) {
+        try {
+          drop = await resolveDrop(team.teamName, dropId);
+        } catch (err) {
+          dropError = err.message;
+        }
+      }
 
       if (!openEntry || openEntry.status !== 'open') {
         if (snap.minors.get(id)?.minors === 'Y') {
@@ -237,10 +251,10 @@ module.exports = {
         });
         summary += `\n\nDrop of **${drop.label}** is saved and will only be filed if you win this auction.`;
       } else {
+        if (dropError) summary += `\n\nDrop not saved: ${dropError}`;
         const saved = auctionDropFor(registry.getEntry('nhl', id), team.teamName);
         const fxTeam = snapshot.fantraxTeamFor(team.teamName, ownership);
-        const counts = countRoster(fxTeam?.items);
-        const limits = rosterLimits(cfg);
+        const { counts, limits } = teamRosterState(fxTeam, team.teamName, cfg);
         if (saved) {
           summary += `\n\nYour saved drop of **${saved.label}** is filed only if you win.`;
         } else if (fxTeam && rosterFull('nhl', counts, limits)) {

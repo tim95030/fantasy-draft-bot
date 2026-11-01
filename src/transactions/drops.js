@@ -6,6 +6,7 @@ const registry = require('./registry');
 const common = require('./common');
 const { contractLabel, playerLabel } = require('./format');
 const { staleEntryReason, retireOnDrop } = require('./lifecycle');
+const { pendingDropIds, countRoster, rosterLimits } = require('./roster');
 
 /** The team's Fantrax roster item for a drop candidate, or throws a user-facing error. */
 async function resolveDrop(teamName, playerId) {
@@ -84,6 +85,17 @@ async function dropChoices(interaction, query, kind) {
     .map((r) => ({ name: `${r.label} — ${r.contract}`.slice(0, 100), value: r.id }));
 }
 
+/** Roster counts for a Fantrax team, not counting players it already filed drops for. */
+function teamRosterState(fxTeam, teamName, cfg = common.txnConfig()) {
+  const pendingDrops = pendingDropIds(registry.loadDrops(), teamName, fxTeam?.items);
+  return {
+    items: fxTeam?.items || [],
+    pendingDrops,
+    counts: countRoster(fxTeam?.items, { exclude: pendingDrops }),
+    limits: rosterLimits(cfg),
+  };
+}
+
 function teamKey(teamName) {
   return fantrax.normalizeTeamName(teamName);
 }
@@ -108,4 +120,12 @@ function auctionDropFor(entry, teamName) {
   return entry?.linkedDrops?.[teamKey(teamName)] || null;
 }
 
-module.exports = { resolveDrop, fileDrop, dropChoices, saveAuctionDrop, auctionDropFor, teamKey };
+module.exports = {
+  resolveDrop,
+  fileDrop,
+  dropChoices,
+  teamRosterState,
+  saveAuctionDrop,
+  auctionDropFor,
+  teamKey,
+};

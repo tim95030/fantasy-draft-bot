@@ -1,6 +1,14 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { rosterLimits, countRoster, rosterFull, fullRosterNotice, spotsLine, splitRosterRows } = require('./roster');
+const {
+  rosterLimits,
+  pendingDropIds,
+  countRoster,
+  rosterFull,
+  fullRosterNotice,
+  spotsLine,
+  splitRosterRows,
+} = require('./roster');
 
 const items = (spec) =>
   Object.entries(spec).flatMap(([status, n]) => Array.from({ length: n }, () => ({ status })));
@@ -37,6 +45,25 @@ test('spots line states open NHL and AHL spots plainly', () => {
     '**NHL Spots: 1 open (22/23)  ·  AHL Spots: 0 open (30/30)**',
   );
   assert.match(spotsLine({ pro: 25, minors: 31 }, { pro: 23, minors: 30 }), /NHL Spots: 0 open.*AHL Spots: 0 open/);
+});
+
+test('recently dropped players still in Fantrax do not take a spot', () => {
+  const now = Date.parse('2026-11-01T18:00:00Z');
+  const roster = [
+    { id: 'a', status: 'ACTIVE' },
+    { id: 'b', status: 'ACTIVE' },
+    { id: 'm', status: 'MINORS' },
+  ];
+  const drops = [
+    { teamName: 'Calgary Flames', playerId: 'a', at: '2026-10-31T18:00:00Z' },
+    { teamName: 'calgary flames', playerId: 'm', at: '2026-10-31T18:00:00Z' },
+    { teamName: 'Calgary Flames', playerId: 'b', at: '2026-10-01T18:00:00Z' },
+    { teamName: 'Calgary Flames', playerId: 'gone', at: '2026-10-31T18:00:00Z' },
+    { teamName: 'Nashville Predators', playerId: 'b', at: '2026-10-31T18:00:00Z' },
+  ];
+  const pending = pendingDropIds(drops, 'Calgary Flames', roster, now);
+  assert.deepEqual([...pending].sort(), ['a', 'm']);
+  assert.deepEqual(countRoster(roster, { exclude: pending }), { pro: 1, ir: 0, minors: 0 });
 });
 
 test('roster rows split into NHL and minors lists with IR and uncalled tags', () => {

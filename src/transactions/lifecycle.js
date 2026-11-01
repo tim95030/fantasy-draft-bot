@@ -44,4 +44,15 @@ function winnerDropAction(savedDrop, rosterItems, counts, limits) {
   return rosterFull('nhl', counts, limits) ? 'needs_drop' : 'none';
 }
 
-module.exports = { staleEntryReason, retireOnDrop, retireOnThreadDelete, winnerDropAction };
+/**
+ * Whether a drop can still be linked to this add. Archived threads are finished.
+ * AHL claims are finished once the commish locks them; NHL auction threads are locked by the bot
+ * while awaiting the Fantrax add, so only archiving finishes them.
+ */
+function addLinkOpen(entry, thread) {
+  if (!thread || thread.archived) return false;
+  if (entry?.kind === 'ahl') return !thread.locked;
+  return true;
+}
+
+module.exports = { staleEntryReason, retireOnDrop, retireOnThreadDelete, winnerDropAction, addLinkOpen };
