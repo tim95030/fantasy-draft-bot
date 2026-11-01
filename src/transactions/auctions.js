@@ -18,6 +18,11 @@ const {
   ensureCommishThreadAccess,
 } = require('./threadPerms');
 const { isTxnCommish } = require('../config');
+const fantrax = require('../draft/fantrax');
+const snapshot = require('./snapshot');
+const { fileDrop, auctionDropFor } = require('./drops');
+const { countRoster, rosterLimits } = require('./roster');
+const { winnerDropAction } = require('./lifecycle');
 
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_MS = 60 * 1000;
@@ -175,6 +180,49 @@ async function applyBid({ kind, playerId, amount, userId, teamName, messageId })
   return { entry: updated, previous: prevHigh };
 }
 
+async function winnerRoster(teamName) {
+  try {
+    const ownership = await fantrax.fetchRosterOwnership();
+    const fxTeam = snapshot.fantraxTeamFor(teamName, ownership);
+    if (!fxTeam) return null;
+    return { items: fxTeam.items, counts: countRoster(fxTeam.items), limits: rosterLimits(txnConfig()) };
+  } catch (err) {
+    console.warn(`Roster check for ${teamName} failed:`, err.message);
+    return null;
+  }
+}
+
+function needsDropLine(winner, entry, roster) {
+  const name = entry.player?.name || entry.title || 'this player';
+  return (
+    `<@${winner.userId}> — your pro roster is full (${roster.counts.pro}/${roster.limits.pro}), ` +
+    `so you'll need a drop to make room for **${name}**. ` +
+    `Run \`/drop-player player:<who> for_add:${name}\` to file it linked to this auction.`
+  );
+}
+
+async function fileWinnerDrop(thread, playerId, winner, savedDrop) {
+  try {
+    const result = await fileDrop({
+      client,
+      teamName: winner.teamName,
+      playerId: savedDrop.playerId,
+      byUserId: savedDrop.byUserId || winner.userId,
+      linkedAddUrl: thread.url,
+      reason: `Linked drop for auction ${thread.id}`,
+    });
+    if (result.error) {
+      await postInThread(thread, `Linked drop not filed: ${result.error} ${result.thread}`);
+      return;
+    }
+    registry.upsertEntry('nhl', playerId, { linkedDropThreadId: result.thread.id });
+    await postInThread(thread, `Linked drop: ${result.thread.url}`);
+  } catch (err) {
+    console.error('Linked drop failed:', err.message);
+    await postInThread(thread, `**Commish:** linked drop of **${savedDrop.label}** could not be filed (${err.message}).`);
+  }
+}
+
 async function closeAuction(playerId) {
   if (!client) return;
   const entry = registry.getEntry('nhl', playerId);
@@ -207,11 +255,26 @@ async function closeAuction(playerId) {
       closedAt: new Date().toISOString(),
       winner,
     });
-    const line =
+    const savedDrop = auctionDropFor(entry, winner.teamName);
+    const roster = await winnerRoster(winner.teamName);
+    const dropAction = roster
+      ? winnerDropAction(savedDrop, roster.items, roster.counts, roster.limits)
+      : 'none';
+    let line =
       `**Auction closed** — <@${winner.userId}> won **${label}** for **${formatSalary(winner.amount)}** ` +
       `(${winner.teamName || 'your team'}).\n\n` +
       `<@${winner.userId}> Reply in this thread with contract length (**1**–**6** years), e.g. \`3\` or \`3 years\`.`;
+    if (dropAction === 'needs_drop') line += `\n\n${needsDropLine(winner, entry, roster)}`;
     await postInThread(thread, line, [winner.userId]);
+    registry.upsertEntry('nhl', playerId, { linkedDrops: {} });
+    if (dropAction === 'file') {
+      await fileWinnerDrop(thread, playerId, winner, savedDrop);
+    } else if (dropAction === 'missing') {
+      await postInThread(
+        thread,
+        `**Commish:** ${winner.teamName} linked a drop of **${savedDrop.label}**, but he's no longer on their Fantrax roster. No drop was filed.`,
+      );
+    }
     const winnerOnly = await setWinnerOnlyPosting(thread, winner.userId);
     if (!winnerOnly) {
       console.warn(
@@ -300,10 +363,17 @@ async function handleWinnerYears(message, entry) {
     ? 'This thread is **locked** — no further posts until the commish finishes in Fantrax and **archives** the thread here.'
     : '**Commish:** lock or archive this thread after Fantrax is updated (bot needs **Manage Threads** to lock automatically).';
 
+  let dropReminder = '';
+  if (!registry.getEntry('nhl', entry.playerId)?.linkedDropThreadId) {
+    const roster = await winnerRoster(entry.winner.teamName);
+    if (roster && winnerDropAction(null, roster.items, roster.counts, roster.limits) === 'needs_drop') {
+      dropReminder = `\n\n${needsDropLine(entry.winner, entry, roster)}`;
+    }
+  }
   await postInThread(
     message.channel,
     `**${label}** — **${formatSalary(entry.winner.amount)}** for **${years} year${years === 1 ? '' : 's'}** ` +
-      `(<@${entry.winner.userId}>). Commish: add in Fantrax.\n\n${lockNote}`,
+      `(<@${entry.winner.userId}>). Commish: add in Fantrax.\n\n${lockNote}${dropReminder}`,
     [entry.winner.userId],
   );
   const removed = await deleteUserMessage(message);

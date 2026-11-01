@@ -1,3 +1,5 @@
+const { rosterFull } = require('./roster');
+
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
@@ -31,4 +33,15 @@ function retireOnThreadDelete(entry) {
   return true;
 }
 
-module.exports = { staleEntryReason, retireOnDrop, retireOnThreadDelete };
+/**
+ * What to do about the NHL auction winner's drop at close:
+ * `file` the saved drop, flag it `missing` from their roster, ask for one (`needs_drop`), or `none`.
+ */
+function winnerDropAction(savedDrop, rosterItems, counts, limits) {
+  if (savedDrop) {
+    return (rosterItems || []).some((i) => i.id === savedDrop.playerId) ? 'file' : 'missing';
+  }
+  return rosterFull('nhl', counts, limits) ? 'needs_drop' : 'none';
+}
+
+module.exports = { staleEntryReason, retireOnDrop, retireOnThreadDelete, winnerDropAction };

@@ -29,6 +29,8 @@ const DEFAULTS = {
     ahlAddsChannelId: '1549410712793653308',
     dropsChannelId: '1549410801960493136',
     callupsChannelId: '1549410769022750891',
+    proRosterMax: 23,
+    minorsRosterMax: 30,
     minBid: 850_000,
     bidIncrement: 25_000,
     minRaise: 100_000,

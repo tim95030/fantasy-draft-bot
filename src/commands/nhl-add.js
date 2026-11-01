@@ -11,6 +11,8 @@ const { formatSalary, playerLabel, parseSalary } = require('../transactions/form
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 const { staleEntryReason } = require('../transactions/lifecycle');
+const { resolveDrop, dropChoices, saveAuctionDrop, auctionDropFor } = require('../transactions/drops');
+const { rosterLimits, countRoster, rosterFull, fullRosterNotice } = require('../transactions/roster');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -31,12 +33,22 @@ module.exports = {
         .setName('for_team')
         .setDescription('Your team if you own several; admins can pick any team')
         .setAutocomplete(true),
+    )
+    .addStringOption((o) =>
+      o
+        .setName('drop')
+        .setDescription('Optional: player to drop, filed only if you win this auction')
+        .setAutocomplete(true),
     ),
 
   async autocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
     if (focused.name === 'for_team') {
       await interaction.respond(common.teamChoices(interaction, focused.value));
+      return;
+    }
+    if (focused.name === 'drop') {
+      await interaction.respond(await dropChoices(interaction, focused.value, 'nhl'));
       return;
     }
     const snap = await snapshot.getSnapshot();
@@ -105,8 +117,11 @@ module.exports = {
         throw new Error('This auction is no longer open for bids.');
       }
 
-      const owner = (await fantrax.fetchRosterOwnership()).byPlayerId.get(id);
+      const ownership = await fantrax.fetchRosterOwnership();
+      const owner = ownership.byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
+      const dropId = interaction.options.getString('drop');
+      const drop = dropId ? await resolveDrop(team.teamName, dropId) : null;
 
       if (!openEntry || openEntry.status !== 'open') {
         if (snap.minors.get(id)?.minors === 'Y') {
@@ -205,12 +220,33 @@ module.exports = {
         String(actingUserId) !== String(interaction.user.id)
           ? ` for <@${actingUserId}> (**${team.teamName}**)`
           : '';
-      const summary = await txnSuccessReply(
+      let summary = await txnSuccessReply(
         interaction,
         channel,
         result.thread,
         `${result.created ? 'Opened' : 'Bid posted in'} auction — **${formatSalary(amount)}** for ${label}${proxy}.`,
       );
+      if (drop) {
+        saveAuctionDrop(id, team.teamName, drop, actingUserId);
+        audit('txn.drop_linked', {
+          fantraxId: `i${drop.id}`,
+          player: drop.label,
+          teamName: team.teamName,
+          auctionFantraxId: `i${id}`,
+          by: actingUserId,
+        });
+        summary += `\n\nDrop of **${drop.label}** is saved and will only be filed if you win this auction.`;
+      } else {
+        const saved = auctionDropFor(registry.getEntry('nhl', id), team.teamName);
+        const fxTeam = snapshot.fantraxTeamFor(team.teamName, ownership);
+        const counts = countRoster(fxTeam?.items);
+        const limits = rosterLimits(cfg);
+        if (saved) {
+          summary += `\n\nYour saved drop of **${saved.label}** is filed only if you win.`;
+        } else if (fxTeam && rosterFull('nhl', counts, limits)) {
+          summary += `\n\n${fullRosterNotice('nhl', counts, limits, player.name, { auction: true })}`;
+        }
+      }
       try {
         await interaction.editReply(summary);
       } catch (err) {

@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { staleEntryReason, retireOnDrop, retireOnThreadDelete } = require('./lifecycle');
+const { staleEntryReason, retireOnDrop, retireOnThreadDelete, winnerDropAction } = require('./lifecycle');
+const { auctionDropFor } = require('./drops');
 
 const HOUR = 60 * 60 * 1000;
 
@@ -28,6 +29,26 @@ test('dropping a player clears finished auctions and AHL claims', () => {
   assert.equal(retireOnDrop({ kind: 'nhl', status: 'awaiting_years' }), false);
   assert.equal(retireOnDrop({ kind: 'ahl', status: 'claimed' }), true);
   assert.equal(retireOnDrop(null), false);
+});
+
+test('auction winner drop: file saved drop, flag missing, ask when full, else nothing', () => {
+  const limits = { pro: 23, minors: 30 };
+  const roster = [{ id: 'abc' }, { id: 'def' }];
+  assert.equal(winnerDropAction({ playerId: 'abc' }, roster, { pro: 23 }, limits), 'file');
+  assert.equal(winnerDropAction({ playerId: 'zzz' }, roster, { pro: 23 }, limits), 'missing');
+  assert.equal(winnerDropAction(null, roster, { pro: 23 }, limits), 'needs_drop');
+  assert.equal(winnerDropAction(null, roster, { pro: 22 }, limits), 'none');
+});
+
+test('saved auction drops are looked up per winning team, ignoring case', () => {
+  const entry = {
+    linkedDrops: {
+      [require('./drops').teamKey('Calgary Flames')]: { teamName: 'Calgary Flames', playerId: 'abc' },
+    },
+  };
+  assert.equal(auctionDropFor(entry, 'calgary flames').playerId, 'abc');
+  assert.equal(auctionDropFor(entry, 'Nashville Predators'), null);
+  assert.equal(auctionDropFor(null, 'Calgary Flames'), null);
 });
 
 test('deleting a thread cancels open auctions but keeps decided winners', () => {
