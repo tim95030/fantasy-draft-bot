@@ -143,6 +143,48 @@ async function fetchPlayerDirectory() {
   return out;
 }
 
+function parseMoney(text) {
+  const n = Number(String(text || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Salary used/remaining/cap from the roster page payload; used already includes dead cap. */
+function parseTeamCap(data) {
+  const info = Object.fromEntries((data?.miscData?.salaryInfo?.info || []).map((x) => [x.key, Number(x.value)]));
+  const deadCap = (data?.capHitPenaltyData?.tableData || []).map((row) => ({
+    name: String(row.scorer?.name || row.description || 'Dead cap').trim(),
+    amount: parseMoney(row.salaryAmount),
+    endingSeasonYear: row.endingSeasonYear ?? null,
+  }));
+  if (!Number.isFinite(info.salaryUsed) || !Number.isFinite(info.salaryCap)) return null;
+  return {
+    used: info.salaryUsed,
+    remaining: Number.isFinite(info.salaryRemaining) ? info.salaryRemaining : info.salaryCap - info.salaryUsed,
+    cap: info.salaryCap,
+    deadCap,
+  };
+}
+
+const _capCache = new Map();
+
+/** Fantrax's own cap totals for one team (public roster page, no login). */
+async function fetchTeamCap(teamId) {
+  const leagueId = getLeagueId();
+  if (!leagueId) throw new Error('FANTRAX_LEAGUE_ID is not set in .env');
+  const cached = _capCache.get(teamId);
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.data;
+  const res = await fetch(`https://www.fantrax.com/fxpa/req?leagueId=${encodeURIComponent(leagueId)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'fantasy-draft-bot/1.0 (+discord)' },
+    body: JSON.stringify({ msgs: [{ method: 'getTeamRosterInfo', data: { leagueId, teamId, view: 'CONTRACT' } }] }),
+  });
+  if (!res.ok) throw new Error(`Fantrax HTTP ${res.status} for team cap`);
+  const body = await res.json();
+  const data = parseTeamCap(body?.responses?.[0]?.data);
+  _capCache.set(teamId, { at: Date.now(), data });
+  return data;
+}
+
 /** @returns {Promise<{ id: string, name: string }[]>} */
 async function fetchLeagueTeams() {
   const leagueId = getLeagueId();
@@ -221,6 +263,8 @@ module.exports = {
   fetchRosterOwnership,
   fetchPlayerDirectory,
   fetchLeagueTeams,
+  parseTeamCap,
+  fetchTeamCap,
   diffPicksAgainstRosters,
   formatPickLine,
 };
