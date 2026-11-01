@@ -87,13 +87,14 @@ async function linkDrop(interaction, { team, playerId, forAdd }) {
     linkedAddUrl: addUrl,
     reason: `/drop-player for_add by ${interaction.user.tag}`,
   });
-  if (result.error) return `${result.error} ${result.thread}`;
+  if (result.error && !result.thread) return result.error;
 
   const addThread = await interaction.client.channels.fetch(entry.threadId).catch(() => null);
   if (addLinkOpen(entry, addThread)) await threads.postInThread(addThread, `Linked drop: ${result.thread.url}`);
   if (entry.kind === 'nhl') {
     registry.upsertEntry('nhl', entry.playerId, { linkedDropThreadId: result.thread.id });
   }
+  if (result.error) return `${result.error} ${result.thread} — linked it to **${addLabel}**.`;
   return txnSuccessReply(
     interaction,
     result.channel,

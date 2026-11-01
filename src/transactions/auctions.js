@@ -261,9 +261,9 @@ async function closeAuction(playerId) {
     });
     const savedDrop = auctionDropFor(entry, winner.teamName);
     const roster = await winnerRoster(winner.teamName);
-    const dropAction = roster
-      ? winnerDropAction(savedDrop, roster.items, roster.counts, roster.limits)
-      : 'none';
+    let dropAction = 'none';
+    if (roster) dropAction = winnerDropAction(savedDrop, roster.items, roster.counts, roster.limits);
+    else if (savedDrop) dropAction = 'file';
     let line =
       `**Auction closed** — <@${winner.userId}> won **${label}** for **${formatSalary(winner.amount)}** ` +
       `(${winner.teamName || 'your team'}).\n\n` +
