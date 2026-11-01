@@ -210,11 +210,6 @@ async function fileWinnerDrop(thread, playerId, winner, savedDrop) {
       linkedAddUrl: thread.url,
       reason: `Linked drop for auction ${thread.id}`,
     });
-    if (result.error && result.thread) {
-      registry.upsertEntry('nhl', playerId, { linkedDropThreadId: result.thread.id });
-      await postInThread(thread, `Linked drop (already filed): ${result.thread.url}`);
-      return;
-    }
     if (result.error) {
       await postInThread(thread, `Linked drop not filed: ${result.error}`);
       return;
@@ -228,6 +223,10 @@ async function fileWinnerDrop(thread, playerId, winner, savedDrop) {
 }
 
 async function closeAuction(playerId) {
+  return threads.withLock(threads.registryKey('nhl', playerId), () => closeAuctionLocked(playerId));
+}
+
+async function closeAuctionLocked(playerId) {
   if (!client) return;
   const entry = registry.getEntry('nhl', playerId);
   if (!entry || entry.status !== 'open') return;

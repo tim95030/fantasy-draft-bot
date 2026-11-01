@@ -88,7 +88,11 @@ module.exports = {
       const ownership = await fantrax.fetchRosterOwnership();
       const fxTeam = snapshot.fantraxTeamFor(team.teamName, ownership);
       if (!fxTeam) throw new Error(`No Fantrax roster found for **${team.teamName}**.`);
-      const id = snapshot.rosterIdFromInput(fxTeam, snap.directory, interaction.options.getString('player'));
+      const input = interaction.options.getString('player');
+      const rawId = fantrax.normalizeFantraxId(input);
+      const id = commishOverride(interaction, team) && snap.directory.has(rawId)
+        ? rawId
+        : snapshot.rosterIdFromInput(fxTeam, snap.directory, input, { interaction });
       const item = fxTeam.items.find((i) => i.id === id);
       const player = snap.directory.get(id) || { id, name: id, position: item?.position || '', team: '' };
       const notEligible = callupError(item, player.name);

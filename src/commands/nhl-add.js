@@ -19,6 +19,7 @@ const {
   auctionDropFor,
 } = require('../transactions/drops');
 const { rosterFull, fullRosterNotice } = require('../transactions/roster');
+const { playerCandidates, retryPlayerMessage, linkedDropInputContext } = require('../transactions/playerInput');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -103,7 +104,13 @@ module.exports = {
         'nhl',
         snapshot.search,
       );
-      if (resolved.error) throw new Error(resolved.error);
+      if (resolved.error) {
+        const candidates = new Map([
+          ...snap.nhl.map((p) => [p.id, p]),
+          ...registry.listOpenAuctions('nhl').filter((e) => e.player).map((e) => [e.player.id, e.player]),
+        ]);
+        throw new Error(retryPlayerMessage(interaction, 'player', playerCandidates(candidates.values(), interaction.options.getString('player'))));
+      }
       const { player, id } = resolved;
 
       let openEntry = registry.getEntry('nhl', id);
@@ -131,7 +138,7 @@ module.exports = {
       let dropError = null;
       if (dropId) {
         try {
-          drop = await resolveDrop(team.teamName, dropId);
+          drop = await resolveDrop(team.teamName, dropId, linkedDropInputContext(interaction, 'nhl', id));
         } catch (err) {
           dropError = err.message;
         }
@@ -172,6 +179,7 @@ module.exports = {
           if (bid.error) return { error: bid.error, thread: existing };
           const msg = await threads.postInThread(existing, line, [actingUserId]);
           registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
+          if (drop) saveAuctionDrop(id, team.teamName, drop, actingUserId);
           return { thread: existing, created: false, previous: prevHigh };
         }
 
@@ -197,6 +205,7 @@ module.exports = {
         const msg = await threads.postInThread(thread, line, [actingUserId]);
         registry.upsertEntry('nhl', id, { highBid: { ...bid.entry.highBid, messageId: msg.id } });
         scheduleClose(registry.getEntry('nhl', id));
+        if (drop) saveAuctionDrop(id, team.teamName, drop, actingUserId);
         return { thread, created: true };
       });
 
@@ -241,7 +250,6 @@ module.exports = {
         `${result.created ? 'Opened' : 'Bid posted in'} auction — **${formatSalary(amount)}** for ${label}${proxy}.`,
       );
       if (drop) {
-        saveAuctionDrop(id, team.teamName, drop, actingUserId);
         audit('txn.drop_linked', {
           fantraxId: `i${drop.id}`,
           player: drop.label,

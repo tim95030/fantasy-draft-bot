@@ -10,6 +10,7 @@ const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 const { fileDrop, dropChoices, teamRosterState } = require('../transactions/drops');
 const { rosterFull, fullRosterNotice } = require('../transactions/roster');
+const { playerCandidates, retryPlayerMessage, linkedDropInputContext } = require('../transactions/playerInput');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -77,7 +78,9 @@ module.exports = {
       const snap = await snapshot.getSnapshot();
       const id = fantrax.normalizeFantraxId(interaction.options.getString('player'));
       const player = registry.resolvePlayer(id, snap, 'ahl') || snap.directory.get(id);
-      if (!player) throw new Error('Player not found. Pick one from the autocomplete list.');
+      if (!player) {
+        throw new Error(retryPlayerMessage(interaction, 'player', playerCandidates(snap.ahl, interaction.options.getString('player'))));
+      }
       const ownership = await fantrax.fetchRosterOwnership();
       const owner = ownership.byPlayerId.get(id);
       if (owner) throw new Error(`${player.name} is already on **${owner}** in Fantrax.`);
@@ -160,6 +163,7 @@ module.exports = {
             byUserId: actingUserId,
             linkedAddUrl: result.thread.url,
             reason: `/ahl-add drop by ${interaction.user.tag}`,
+            inputContext: linkedDropInputContext(interaction, 'ahl', id),
           });
           if (dropped.error) {
             summary += `\n\nDrop not filed: ${dropped.error} ${dropped.thread}`;

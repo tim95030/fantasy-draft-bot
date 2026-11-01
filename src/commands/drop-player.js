@@ -59,48 +59,54 @@ async function linkDrop(interaction, { team, playerId, forAdd }) {
         '(open NHL auctions, NHL auctions you won, or your AHL claims still open in #ahl-adds).',
     );
   }
-  const { entry } = match;
-  const addLabel = entry.player ? playerLabel(entry.player) : entry.title;
-  const addUrl = threadUrl(interaction.guildId, entry.threadId);
+  const { entry: selectedEntry } = match;
+  const drop = await resolveDrop(team.teamName, playerId, { interaction });
+  return threads.withLock(threads.registryKey(selectedEntry.kind, selectedEntry.playerId), async () => {
+    const current = findLinkableAdd(linkableAdds(team.teamName, interaction.client), match.value);
+    if (!current || current.entry.threadId !== selectedEntry.threadId) {
+      throw new Error('That add has closed or is no longer yours to link. Choose an open add from `for_add` autocomplete.');
+    }
+    const { entry } = current;
+    const addLabel = entry.player ? playerLabel(entry.player) : entry.title;
+    const addUrl = threadUrl(interaction.guildId, entry.threadId);
 
-  if (entry.kind === 'nhl' && entry.status === 'open') {
-    const drop = await resolveDrop(team.teamName, playerId);
-    saveAuctionDrop(entry.playerId, team.teamName, drop, interaction.user.id);
-    audit('txn.drop_linked', {
-      fantraxId: `i${drop.id}`,
-      player: drop.label,
+    if (entry.kind === 'nhl' && entry.status === 'open') {
+      saveAuctionDrop(entry.playerId, team.teamName, drop, interaction.user.id);
+      audit('txn.drop_linked', {
+        fantraxId: `i${drop.id}`,
+        player: drop.label,
+        teamName: team.teamName,
+        auctionFantraxId: `i${entry.playerId}`,
+        by: interaction.user.id,
+      });
+      return (
+        `Drop of **${drop.label}** is saved and will only be filed if **${team.teamName}** wins **${addLabel}**. ` +
+        `Auction: ${addUrl}`
+      );
+    }
+
+    const result = await fileDrop({
+      client: interaction.client,
       teamName: team.teamName,
-      auctionFantraxId: `i${entry.playerId}`,
-      by: interaction.user.id,
+      playerId: drop.id,
+      byUserId: interaction.user.id,
+      linkedAddUrl: addUrl,
+      reason: `/drop-player for_add by ${interaction.user.tag}`,
     });
-    return (
-      `Drop of **${drop.label}** is saved and will only be filed if **${team.teamName}** wins **${addLabel}**. ` +
-      `Auction: ${addUrl}`
+    if (result.error) return `${result.error} ${result.thread || ''}`;
+
+    const addThread = await interaction.client.channels.fetch(entry.threadId).catch(() => null);
+    if (addLinkOpen(entry, addThread)) await threads.postInThread(addThread, `Linked drop: ${result.thread.url}`);
+    if (entry.kind === 'nhl') {
+      registry.upsertEntry('nhl', entry.playerId, { linkedDropThreadId: result.thread.id });
+    }
+    return txnSuccessReply(
+      interaction,
+      result.channel,
+      result.thread,
+      `${result.reused ? 'Linked existing' : 'Opened'} drop thread — **${result.drop.player.name}** (${result.drop.contract}), linked to **${addLabel}**.`,
     );
-  }
-
-  const result = await fileDrop({
-    client: interaction.client,
-    teamName: team.teamName,
-    playerId,
-    byUserId: interaction.user.id,
-    linkedAddUrl: addUrl,
-    reason: `/drop-player for_add by ${interaction.user.tag}`,
   });
-  if (result.error && !result.thread) return result.error;
-
-  const addThread = await interaction.client.channels.fetch(entry.threadId).catch(() => null);
-  if (addLinkOpen(entry, addThread)) await threads.postInThread(addThread, `Linked drop: ${result.thread.url}`);
-  if (entry.kind === 'nhl') {
-    registry.upsertEntry('nhl', entry.playerId, { linkedDropThreadId: result.thread.id });
-  }
-  if (result.error) return `${result.error} ${result.thread} — linked it to **${addLabel}**.`;
-  return txnSuccessReply(
-    interaction,
-    result.channel,
-    result.thread,
-    `Opened drop thread — **${result.drop.player.name}** (${result.drop.contract}), linked to **${addLabel}**.`,
-  );
 }
 
 module.exports = {
@@ -197,6 +203,7 @@ module.exports = {
         playerId,
         byUserId: interaction.user.id,
         reason: `/drop-player by ${interaction.user.tag}`,
+        inputContext: { interaction },
       });
       if (result.error) {
         const userFacing = `${result.error} ${result.thread}`;

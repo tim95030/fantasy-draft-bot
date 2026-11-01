@@ -125,11 +125,6 @@ function resolvePlayerFromInput(raw, snap, kind = 'nhl', searchFn) {
     if (hits.length === 1) return { player: hits[0], id: hits[0].id };
   }
 
-  const open = kind === 'nhl' ? listOpenAuctions('nhl') : [];
-  if (open.length === 1 && open[0].player) {
-    return { player: open[0].player, id: open[0].player.id };
-  }
-
   return {
     error:
       'Player not found. Choose from autocomplete (do not type the name manually). Active NHL auctions show with 🔨.',

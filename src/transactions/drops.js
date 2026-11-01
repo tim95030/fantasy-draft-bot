@@ -9,11 +9,11 @@ const { staleEntryReason, retireOnDrop } = require('./lifecycle');
 const { pendingDropIds, countRoster, rosterLimits } = require('./roster');
 
 /** The team's Fantrax roster item for a drop candidate, or throws a user-facing error. */
-async function resolveDrop(teamName, playerId) {
+async function resolveDrop(teamName, playerId, inputContext) {
   const [snap, ownership] = await Promise.all([snapshot.getSnapshot(), fantrax.fetchRosterOwnership()]);
   const fxTeam = snapshot.fantraxTeamFor(teamName, ownership);
   if (!fxTeam) throw new Error(`No Fantrax roster found for **${teamName}**.`);
-  const id = snapshot.rosterIdFromInput(fxTeam, snap.directory, playerId);
+  const id = snapshot.rosterIdFromInput(fxTeam, snap.directory, playerId, inputContext);
   const item = fxTeam.items.find((i) => i.id === id);
   if (!item) throw new Error(`That player isn't on the ${teamName} Fantrax roster.`);
   const player = snap.directory.get(id) || { id, name: id, position: item.position, team: '' };
@@ -22,11 +22,11 @@ async function resolveDrop(teamName, playerId) {
 
 /**
  * Open a #drops thread. `linkedAddUrl` adds a "Linked add" line pointing at the add/auction thread.
- * Returns `{ thread, drop }`, or `{ error, thread }` when a drop thread is already open.
+ * Reuses an active existing drop for linked adds. Plain duplicate drops return `{ error, thread }`.
  */
-async function fileDrop({ client, teamName, playerId, byUserId, linkedAddUrl, reason }) {
+async function fileDrop({ client, teamName, playerId, byUserId, linkedAddUrl, reason, inputContext }) {
   const cfg = common.txnConfig();
-  const drop = await resolveDrop(teamName, playerId);
+  const drop = await resolveDrop(teamName, playerId, inputContext);
   const channel = await client.channels.fetch(common.targetChannelId('drop', cfg));
 
   const result = await threads.withLock(threads.registryKey('drop', drop.id), async () => {
@@ -34,7 +34,16 @@ async function fileDrop({ client, teamName, playerId, byUserId, linkedAddUrl, re
     const staleReason = staleEntryReason(prev, { dropCooldownHours: cfg.dropCooldownHours ?? 48 });
     if (staleReason) registry.retireEntry('drop', drop.id, staleReason);
     const existing = await threads.findThread(client, 'drop', drop.id, channel.id);
-    if (existing) return { error: `There's already a drop thread for ${drop.label}:`, thread: existing };
+    if (existing) {
+      if (!linkedAddUrl) return { error: `There's already a drop thread for ${drop.label}:`, thread: existing };
+      if (existing.archived) return { error: `The drop thread for ${drop.label} is archived; it cannot be linked:`, thread: existing };
+      const linkedAddUrls = [...new Set([...(prev?.linkedAddUrls || []), prev?.linkedAddUrl].filter(Boolean))];
+      if (!linkedAddUrls.includes(linkedAddUrl)) {
+        await threads.postInThread(existing, `Linked add: ${linkedAddUrl}`);
+        registry.upsertEntry('drop', drop.id, { linkedAddUrls: [...linkedAddUrls, linkedAddUrl] });
+      }
+      return { thread: existing, reused: true };
+    }
     const thread = await threads.createThread(channel, {
       kind: 'drop',
       playerId: drop.id,
@@ -51,6 +60,7 @@ async function fileDrop({ client, teamName, playerId, byUserId, linkedAddUrl, re
     return { thread };
   });
   if (result.error) return { ...result, channel };
+  if (result.reused) return { ...result, channel, drop };
 
   registry.recordDrop({ teamName, playerId: drop.id, playerName: drop.player.name });
   for (const kind of ['nhl', 'ahl']) {
@@ -103,6 +113,7 @@ function teamKey(teamName) {
 /** Save a drop that is only filed if `teamName` wins the NHL auction for `auctionPlayerId`. */
 function saveAuctionDrop(auctionPlayerId, teamName, drop, byUserId) {
   const entry = registry.getEntry('nhl', auctionPlayerId);
+  if (entry?.status !== 'open') throw new Error('This auction is no longer open. Link the drop again with /drop-player for_add:.');
   const linkedDrops = { ...(entry?.linkedDrops || {}) };
   linkedDrops[teamKey(teamName)] = {
     teamName,

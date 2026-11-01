@@ -6,6 +6,7 @@ const { parseCsv } = require('../draft/players');
 const { loadOrder, findTeamsForUser } = require('../draft/order');
 const { audit } = require('../draft/audit');
 const { playerLabel, contractLabel } = require('./format');
+const { playerCandidates, retryPlayerMessage } = require('./playerInput');
 
 const REFRESH_MS = 60 * 60 * 1000;
 const MINORS_CSV = path.join(paths.DATA, 'minors-status.csv');
@@ -126,7 +127,7 @@ function teamsForUser(userId) {
  * Roster item id for an option value: the autocomplete id, or typed text (name or "Name POS, TEAM" label)
  * matching exactly one player on this roster.
  */
-function rosterIdFromInput(fxTeam, directory, input) {
+function rosterIdFromInput(fxTeam, directory, input, { interaction, optionName = 'player' } = {}) {
   const id = fantrax.normalizeFantraxId(input);
   const items = fxTeam?.items || [];
   if (items.some((i) => i.id === id)) return id;
@@ -137,12 +138,17 @@ function rosterIdFromInput(fxTeam, directory, input) {
     const m = named.filter(pred);
     return m.length === 1 ? m[0].id : null;
   };
-  return (
+  const resolved = (
     hit(({ p }) => p && fold(p.name) === q) ||
     hit(({ p }) => p && q.startsWith(fold(p.name))) ||
-    hit(({ p }) => p && fold(p.name).includes(q)) ||
-    id
+    hit(({ p }) => p && fold(p.name).includes(q))
   );
+  if (resolved) return resolved;
+  if (interaction) {
+    const players = named.filter(({ p }) => p).map(({ id, p }) => ({ ...p, id }));
+    throw new Error(retryPlayerMessage(interaction, optionName, playerCandidates(players, input)));
+  }
+  return id;
 }
 
 function fantraxTeamFor(teamName, ownership) {
