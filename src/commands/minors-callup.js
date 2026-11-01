@@ -74,10 +74,10 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
     try {
       const snap = await snapshot.getSnapshot();
-      const id = fantrax.normalizeFantraxId(interaction.options.getString('player'));
       const ownership = await fantrax.fetchRosterOwnership();
       const fxTeam = snapshot.fantraxTeamFor(team.teamName, ownership);
       if (!fxTeam) throw new Error(`No Fantrax roster found for **${team.teamName}**.`);
+      const id = snapshot.rosterIdFromInput(fxTeam, snap.directory, interaction.options.getString('player'));
       const item = fxTeam.items.find((i) => i.id === id);
       const player = snap.directory.get(id) || { id, name: id, position: item?.position || '', team: '' };
       const notEligible = callupError(item, player.name);

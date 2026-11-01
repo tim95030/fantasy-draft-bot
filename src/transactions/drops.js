@@ -10,10 +10,10 @@ const { pendingDropIds, countRoster, rosterLimits } = require('./roster');
 
 /** The team's Fantrax roster item for a drop candidate, or throws a user-facing error. */
 async function resolveDrop(teamName, playerId) {
-  const id = fantrax.normalizeFantraxId(playerId);
   const [snap, ownership] = await Promise.all([snapshot.getSnapshot(), fantrax.fetchRosterOwnership()]);
   const fxTeam = snapshot.fantraxTeamFor(teamName, ownership);
   if (!fxTeam) throw new Error(`No Fantrax roster found for **${teamName}**.`);
+  const id = snapshot.rosterIdFromInput(fxTeam, snap.directory, playerId);
   const item = fxTeam.items.find((i) => i.id === id);
   if (!item) throw new Error(`That player isn't on the ${teamName} Fantrax roster.`);
   const player = snap.directory.get(id) || { id, name: id, position: item.position, team: '' };

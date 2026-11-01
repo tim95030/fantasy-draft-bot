@@ -122,6 +122,29 @@ function teamsForUser(userId) {
 }
 
 /** Fantrax roster for a draft team name (Canadians/Canadiens tolerant). */
+/**
+ * Roster item id for an option value: the autocomplete id, or typed text (name or "Name POS, TEAM" label)
+ * matching exactly one player on this roster.
+ */
+function rosterIdFromInput(fxTeam, directory, input) {
+  const id = fantrax.normalizeFantraxId(input);
+  const items = fxTeam?.items || [];
+  if (items.some((i) => i.id === id)) return id;
+  const q = fold(input);
+  if (!q) return id;
+  const named = items.map((i) => ({ id: i.id, p: directory?.get(i.id) }));
+  const hit = (pred) => {
+    const m = named.filter(pred);
+    return m.length === 1 ? m[0].id : null;
+  };
+  return (
+    hit(({ p }) => p && fold(p.name) === q) ||
+    hit(({ p }) => p && q.startsWith(fold(p.name))) ||
+    hit(({ p }) => p && fold(p.name).includes(q)) ||
+    id
+  );
+}
+
 function fantraxTeamFor(teamName, ownership) {
   const want = fantrax.normalizeTeamName(teamName);
   for (const t of ownership.teams.values()) {
@@ -174,6 +197,7 @@ module.exports = {
   search,
   teamsForUser,
   fantraxTeamFor,
+  rosterIdFromInput,
   teamMappingReport,
   rosterRows,
   fold,
