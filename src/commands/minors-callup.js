@@ -8,6 +8,16 @@ const { playerLabel } = require('../transactions/format');
 const { txnSuccessReply } = require('../transactions/reply');
 const { logTxnUserMessage, reportTxnCommandFailure } = require('../transactions/txnLog');
 const { CALLUP_CONTRACT, callupError } = require('../transactions/callups');
+const { isAdmin } = require('../config');
+const { teamOwnedBy } = require('../draft/order');
+
+function commishOverride(interaction, team) {
+  return Boolean(
+    interaction.options.getString('for_team') &&
+      isAdmin(interaction.user.id, interaction.member) &&
+      !teamOwnedBy(team, interaction.user.id),
+  );
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -45,9 +55,10 @@ module.exports = {
       return;
     }
     const q = snapshot.fold(focused.value);
+    const showAll = commishOverride(interaction, team);
     const rows = snapshot
       .rosterRows(fxTeam, snap.directory)
-      .filter((r) => !callupError(r.item, r.name))
+      .filter((r) => showAll || !callupError(r.item, r.name))
       .filter((r) => !q || snapshot.fold(r.name).includes(q))
       .slice(0, 25);
     await interaction.respond(rows.map((r) => ({ name: r.label.slice(0, 100), value: r.id })));
@@ -81,7 +92,12 @@ module.exports = {
       const item = fxTeam.items.find((i) => i.id === id);
       const player = snap.directory.get(id) || { id, name: id, position: item?.position || '', team: '' };
       const notEligible = callupError(item, player.name);
-      if (notEligible) throw new Error(notEligible);
+      const override = Boolean(notEligible) && commishOverride(interaction, team);
+      if (notEligible && !override) throw new Error(notEligible);
+      if (override && !snap.directory.has(id)) {
+        throw new Error(`Couldn't find a Fantrax player for **${interaction.options.getString('player')}**.`);
+      }
+      const overrideNote = override ? `\n**Commish override:** ${notEligible}` : '';
 
       const label = playerLabel(player);
       const channelId = common.targetChannelId('callup', cfg);
@@ -99,7 +115,7 @@ module.exports = {
         });
         await threads.postInThread(
           thread,
-          `${team.teamName} call up ${player.name} — <@${actingUserId}>\nContract: **${CALLUP_CONTRACT}**`,
+          `${team.teamName} call up ${player.name} — <@${actingUserId}>\nContract: **${CALLUP_CONTRACT}**${overrideNote}`,
           [actingUserId],
         );
         return { thread };
@@ -126,6 +142,7 @@ module.exports = {
         by: actingUserId,
         threadId: result.thread.id,
       };
+      if (override) auditRow.override = notEligible;
       if (String(actingUserId) !== String(interaction.user.id)) {
         auditRow.commandBy = interaction.user.id;
       }
