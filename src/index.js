@@ -57,6 +57,7 @@ async function main() {
     const auctions = require('./transactions/auctions');
     auctions.bindClient(client);
     auctions.startScheduler();
+    require('./monitor').monitor.start(client);
   });
 
   await client.login(process.env.DISCORD_TOKEN);

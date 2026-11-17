@@ -565,3 +565,41 @@ With `snake: true` and `startRound: 32`:
 ## License
 
 Use freely for your league. Keep secrets out of git.
+
+## Roster compliance monitor
+
+`/roster-monitor status` privately shows monitor health. Only the configured transaction
+commish can view or change settings:
+
+```
+/roster-monitor settings interval_minutes:15 escalate_after_cycles:4
+/roster-monitor settings enabled:false
+/roster-monitor settings season_active:false
+```
+
+The monitor reads all 32 Fantrax rosters every 15 minutes. New issues produce one owner
+DM, followed by one commish escalation after four successful checks following the warning.
+Every escalation includes the current timing and a copyable settings command. Failed or
+incomplete roster reads leave the last snapshot intact and do not advance escalation.
+Blocked owner DMs are reported to the commish. Roster-space issues retain a 72-hour grace
+period before escalation; new minors acquisitions held on reserve while minors is full
+also receive that space window. Placement in the active lineup triggers callup checks.
+
+Checks cover missing bot callup records, pro contracts or observed promotions sent to
+minors, newly acquired ineligible minors, observed early same-team minors reacquisitions,
+roster limits (excluding IR and filed drops), and adjusted Fantrax cap totals. Existing
+prospects crossing eligibility thresholds midseason are not treated as illegal new adds.
+Callup evidence comes from bot transaction records, not manually written Discord posts.
+
+The first complete scan establishes a baseline and privately reports existing issues to
+the configured baseline recipients. Owners receive warnings only for subsequent new
+incidents; a baseline issue must resolve and recur before warning its owner. The monitor
+never edits rosters or transaction records. Periodic snapshots cannot detect changes
+made and reversed between checks or establish historical cap-at-bid compliance.
+
+Settings and incident history live in ignored `data/roster-monitor-*.json` files. Preserve
+both across deployments: deleting state resets the baseline. The feature defaults to
+disabled; deployment settings must provide `commishUserIds` and `baselineUserIds` before
+enabling it. `season_active:false` pauses in-season callup/promotion checks without
+pausing cap, roster-size, or new-acquisition checks. Run `npm run test:monitor` for isolated
+mocked checks without contacting Discord.

@@ -12,6 +12,8 @@ data/player-queues.json
 data/audit.jsonl
 data/transactions.json
 data/transaction-drops.json
+data/roster-monitor-*.json
+data/roster-monitor-*.json.tmp
 *.log
 *.swp
 *.swo
