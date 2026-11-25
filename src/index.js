@@ -58,6 +58,7 @@ async function main() {
     auctions.bindClient(client);
     auctions.startScheduler();
     require('./monitor').monitor.start(client);
+    require('./lineup').tracker.start();
   });
 
   await client.login(process.env.DISCORD_TOKEN);

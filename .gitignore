@@ -19,3 +19,6 @@ data/roster-monitor-*.json.tmp
 *.swo
 *~
 .*.sw?
+
+data/lineup-activity-*.json
+data/lineup-activity-*.json.tmp

@@ -603,3 +603,36 @@ disabled; deployment settings must provide `commishUserIds` and `baselineUserIds
 enabling it. `season_active:false` pauses in-season callup/promotion checks without
 pausing cap, roster-size, or new-acquisition checks. Run `npm run test:monitor` for isolated
 mocked checks without contacting Discord.
+
+## Lineup activity (commish only)
+
+`/lineup-activity report` privately lists every team's last recorded lineup change,
+oldest first, including elapsed days and the affected scoring periods. Use
+`/lineup-activity report inactive_days:14` to change the review threshold for one report.
+The default threshold is seven days; this marks teams for review, not rule violations.
+
+Only IDs in `transactions.commishUserIds` can use **any** `/lineup-activity` subcommand.
+Manage Server permission alone does not grant access. Responses are ephemeral. There
+are no owner reminders, commissioner DMs, or public activity reports.
+
+```
+/lineup-activity settings interval_minutes:60 inactive_days:7
+/lineup-activity settings enabled:false
+```
+
+The independent collector checks all 32 teams hourly in live transaction mode and saves
+results in ignored `data/lineup-activity-*.json` files. Reports refresh missing, failed,
+or expired results when collection is enabled. Settings accept intervals of 15–1440
+minutes and thresholds of 1–365 days. Collection is enabled by default and does not
+change rosters, transaction history, or the roster compliance monitor.
+
+Activity comes from Fantrax's public lineup transaction history, grouped by transaction
+ID. Its processed time is parsed using the response's stated timezone; the affected
+period is separate, so setting a future lineup counts as activity when the change was
+made. Unknown schemas, incomplete team reads, and source errors retain the previous
+successful snapshot. Stale, failed, or paused data is labeled and does not mark teams
+for inactivity. No history is shown as unknown, without inventing a last-change date.
+
+This measures team lineup changes, not logins or reviews of an unchanged lineup. The
+history does not identify whether an owner or commissioner made the change. Use
+`npm run test:lineup` for isolated checks without contacting Fantrax or Discord.
