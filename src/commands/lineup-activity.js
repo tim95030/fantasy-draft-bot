@@ -4,10 +4,14 @@ const settings = require('../lineup/settings');
 const { tracker } = require('../lineup');
 const { report } = require('../lineup/report');
 
-function createExecute({ isCommish = isTxnCommish, storage = settings, activity = tracker, now = Date.now } = {}) {
+function canUseLineup(userId) {
+  return isTxnCommish(userId) || settings.loadSettings().additionalUserIds.includes(String(userId));
+}
+
+function createExecute({ isCommish = canUseLineup, storage = settings, activity = tracker, now = Date.now } = {}) {
   return async (interaction) => {
     if (!isCommish(interaction.user.id)) {
-      await interaction.reply({ content: 'Only the configured league commish can use this command.', ephemeral: true });
+      await interaction.reply({ content: 'Only the configured league commish or an explicitly authorized lineup tester can use this command.', ephemeral: true });
       return;
     }
     const current = storage.loadSettings();
@@ -24,7 +28,7 @@ function createExecute({ isCommish = isTxnCommish, storage = settings, activity 
       activity.reschedule();
       await interaction.reply({ ephemeral: true, content:
         `Lineup activity checks: **${current.enabled ? 'enabled' : 'paused'}**. Every ${current.intervalMinutes} minutes; ` +
-        `review threshold ${current.inactiveDays} days. Reports are commish-only; no activity DMs are sent.\n` +
+        `review threshold ${current.inactiveDays} days. Reports are private to the commish and authorized testers; no activity DMs are sent.\n` +
         `\`/lineup-activity settings interval_minutes:${current.intervalMinutes} inactive_days:${current.inactiveDays}\`` });
       return;
     }
@@ -41,7 +45,7 @@ function createExecute({ isCommish = isTxnCommish, storage = settings, activity 
 }
 
 module.exports = {
-  data: new SlashCommandBuilder().setName('lineup-activity').setDescription('Commish-only last recorded lineup changes')
+  data: new SlashCommandBuilder().setName('lineup-activity').setDescription('Private lineup activity reports for the commish and authorized testers')
     .addSubcommand((s) => s.setName('report').setDescription('Privately report each team’s last recorded lineup change')
       .addIntegerOption((o) => o.setName('inactive_days').setDescription('Days since a change to mark for review (default 7)').setMinValue(1).setMaxValue(365)))
     .addSubcommand((s) => s.setName('settings').setDescription('View or change lineup activity collection settings')
@@ -50,4 +54,5 @@ module.exports = {
       .addBooleanOption((o) => o.setName('enabled').setDescription('Enable or pause lineup history collection'))),
   execute: createExecute(),
   createExecute,
+  canUseLineup,
 };

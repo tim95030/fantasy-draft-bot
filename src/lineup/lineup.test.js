@@ -87,7 +87,7 @@ test('commish report defers privately, refreshes missing data, and report thresh
 test('commish settings persist; invalid input cannot mutate settings', async () => {
   const h = harness(); const execute = createExecute({ isCommish: () => true, storage: h.storage, activity: h.tracker });
   const caller = interaction('commish', 'settings', { interval_minutes: 120, inactive_days: 10, enabled: false });
-  await execute(caller); assert.deepEqual(h.data.settings, { intervalMinutes: 120, inactiveDays: 10, enabled: false });
+  await execute(caller); assert.deepEqual(h.data.settings, { ...DEFAULTS, intervalMinutes: 120, inactiveDays: 10, enabled: false });
   assert.equal(caller.response.ephemeral, true); const before = structuredClone(h.data.settings);
   await assert.rejects(execute(interaction('commish', 'settings', { interval_minutes: 0 })));
   assert.deepEqual(h.data.settings, before);

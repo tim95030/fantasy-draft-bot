@@ -604,14 +604,16 @@ enabling it. `season_active:false` pauses in-season callup/promotion checks with
 pausing cap, roster-size, or new-acquisition checks. Run `npm run test:monitor` for isolated
 mocked checks without contacting Discord.
 
-## Lineup activity (commish only)
+## Lineup activity (commish and authorized testers)
 
 `/lineup-activity report` privately lists every team's last recorded lineup change,
 oldest first, including elapsed days and the affected scoring periods. Use
 `/lineup-activity report inactive_days:14` to change the review threshold for one report.
 The default threshold is seven days; this marks teams for review, not rule violations.
 
-Only IDs in `transactions.commishUserIds` can use **any** `/lineup-activity` subcommand.
+Only IDs in `transactions.commishUserIds` or the lineup settings’ `additionalUserIds`
+allowlist can use `/lineup-activity` subcommands. The allowlist grants access to this
+feature only and is configured on the server, not through Discord.
 Manage Server permission alone does not grant access. Responses are ephemeral. There
 are no owner reminders, commissioner DMs, or public activity reports.
 

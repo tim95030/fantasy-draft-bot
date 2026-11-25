@@ -25,7 +25,7 @@ function report(state, settings, inactiveDays = settings.inactiveDays, now = Dat
       description: lines.slice(index, index + 16).join('\n\n'), color: usable ? 0x3498db : 0x888888 });
   }
   return { allowedMentions: { parse: [] }, embeds, content:
-    `**Lineup activity — commish only**\n` +
+    `**Lineup activity — private report**\n` +
     `Checks: ${settings.enabled ? `every ${settings.intervalMinutes} minutes` : 'paused'}. ` +
     `Review threshold: ${inactiveDays} days.\n` +
     `Last successful check: ${state?.lastScanAt ? stamp(state.lastScanAt) : 'none'}.\n` +

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const paths = require('../paths');
 
-const DEFAULTS = { enabled: true, intervalMinutes: 60, inactiveDays: 7 };
+const DEFAULTS = { enabled: true, intervalMinutes: 60, inactiveDays: 7, additionalUserIds: [] };
 function file(name) { return path.join(paths.DATA, `lineup-activity-${name}.json`); }
 function read(name, fallback) {
   return fs.existsSync(file(name)) ? JSON.parse(fs.readFileSync(file(name), 'utf8')) : fallback;
@@ -14,7 +14,10 @@ function write(name, value) {
 function validate(settings) {
   if (typeof settings.enabled !== 'boolean' || !Number.isInteger(settings.intervalMinutes) ||
       settings.intervalMinutes < 15 || settings.intervalMinutes > 1440 || !Number.isInteger(settings.inactiveDays) ||
-      settings.inactiveDays < 1 || settings.inactiveDays > 365) throw new Error('Invalid lineup activity settings');
+      settings.inactiveDays < 1 || settings.inactiveDays > 365 || !Array.isArray(settings.additionalUserIds) ||
+      settings.additionalUserIds.some((id) => typeof id !== 'string' || !/^\d{17,20}$/.test(id))) {
+    throw new Error('Invalid lineup activity settings');
+  }
   return settings;
 }
 function loadSettings() { return validate({ ...DEFAULTS, ...read('settings', {}) }); }
